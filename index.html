@@ -3423,6 +3423,62 @@ const forum = {
   composing: false
 };
 
+// ---------------------------------------------------------------------------
+// הצבעה אחת מכל כתובת IP: מזהים את הכתובת (נשמר רק גיבוב SHA-256 שלה, לא הכתובת עצמה)
+// והגיבוב נרשם בתוך המסמך של השאלה/התשובה (voters). הבדיקה והרישום נעשים בטרנזקציה אחת.
+// ---------------------------------------------------------------------------
+let forumMyHash = null, forumIpHashP = null, forumResetChecked = false;
+function forumHash(str) {
+  if (window.crypto && window.crypto.subtle && window.TextEncoder) {
+    return window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(str)).then(function(buf) {
+      return Array.from(new Uint8Array(buf)).map(function(b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+    });
+  }
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (let i = 0; i < str.length; i++) { const c = str.charCodeAt(i); h1 = Math.imul(h1 ^ c, 2654435761); h2 = Math.imul(h2 ^ c, 1597334677); }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return Promise.resolve('x' + (h2 >>> 0).toString(16) + (h1 >>> 0).toString(16));
+}
+function forumFetchIp() {
+  const sources = [['https://api.ipify.org?format=json', 'json'], ['https://api64.ipify.org?format=json', 'json'], ['https://www.cloudflare.com/cdn-cgi/trace', 'trace']];
+  let p = Promise.reject(new Error('start'));
+  sources.forEach(function(src) {
+    p = p.catch(function() {
+      return fetch(src[0], { cache: 'no-store' }).then(function(r) {
+        if (!r.ok) throw new Error('ip');
+        return src[1] === 'json' ? r.json().then(function(j) { return j.ip; }) : r.text().then(function(t) { const m = /ip=([^\n]+)/.exec(t); return m && m[1].trim(); });
+      }).then(function(ip) { if (!ip) throw new Error('ip'); return ip; });
+    });
+  });
+  return p;
+}
+function forumIpHash() {
+  if (!forumIpHashP) forumIpHashP = forumFetchIp().then(function(ip) { return forumHash('dawalingo-forum|' + ip); }).catch(function() { forumIpHashP = null; return null; });
+  return forumIpHashP;
+}
+function forumRecomputeVoted(h) {
+  const v = {};
+  forum.data.posts.forEach(function(p) {
+    if ((p.voters || []).indexOf(h) !== -1) v[p.id] = 1;
+    (p.replies || []).forEach(function(r) { if ((r.voters || []).indexOf(h) !== -1) v[p.id + ':' + r.id] = 1; });
+  });
+  forum.data.voted = v;
+}
+// איפוס חד-פעמי של ההצבעות על השאלה הראשונה שמופיעה ברשימה (החדשה ביותר). הסימון votesResetV1 מבטיח שזה יקרה פעם אחת בלבד.
+function forumMaybeResetFirst(posts) {
+  if (forumResetChecked || !posts.length) return;
+  forumResetChecked = true;
+  if (posts.some(function(p) { return p.votesResetV1; })) return;
+  const ref = db.collection('forum_posts').doc(posts[0].id);
+  db.runTransaction(function(tx) {
+    return tx.get(ref).then(function(d) {
+      if (!d.exists || d.data().votesResetV1) return;
+      tx.update(ref, { votes: 0, voters: [], votesResetV1: true });
+    });
+  }).catch(function() {});
+}
+
 // האזנה לפוסטים בזמן אמת מהענן
 db.collection("forum_posts")
   .orderBy("ts", "desc")
@@ -3432,6 +3488,8 @@ db.collection("forum_posts")
       posts.push(Object.assign({ id: doc.id }, doc.data()));
     });
     forum.data.posts = posts;
+    if (forumMyHash) forumRecomputeVoted(forumMyHash);
+    forumMaybeResetFirst(posts);
     if (state.activeNav === 'forum') {
       renderApp();
     }
@@ -3522,42 +3580,65 @@ window.forumVote = async function(id, replyId) {
   const key = replyId ? id + ':' + replyId : id;
   forum.data.voted = forum.data.voted || {};
   if (forum.data.voted[key]) {
-    showToast('כבר הצבעתם כאן.');
+    showToast('כבר הצבעתם כאן. מותר להצביע פעם אחת מכל כתובת IP.');
     return;
   }
-
+  if (forum.voting) return;
+  forum.voting = true;
   try {
-    const postRef = db.collection("forum_posts").doc(id);
-    const doc = await postRef.get();
-    if (!doc.exists) return;
-
-    if (replyId) {
-      const currentReplies = doc.data().replies || [];
-      const reply = currentReplies.find(function(x) { return x.id === replyId; });
-      if (reply) {
-        reply.votes = (reply.votes || 0) + 1;
-        await postRef.update({ replies: currentReplies });
-      }
-    } else {
-      await postRef.update({ votes: (doc.data().votes || 0) + 1 });
+    const h = await forumIpHash();
+    if (!h) {
+      showToast('לא ניתן לאמת את כתובת ה-IP כרגע (ייתכן שחוסם פרסומות מונע זאת). נסו שוב.');
+      return;
     }
-    forum.data.voted[key] = 1;
+    forumMyHash = h;
+    const ref = db.collection("forum_posts").doc(id);
+    const res = await db.runTransaction(function(tx) {
+      return tx.get(ref).then(function(doc) {
+        if (!doc.exists) return 'gone';
+        const data = doc.data();
+        if (replyId) {
+          const replies = (data.replies || []).slice();
+          const idx = replies.findIndex(function(x) { return x.id === replyId; });
+          if (idx < 0) return 'gone';
+          const r = Object.assign({}, replies[idx]);
+          const voters = (r.voters || []).slice();
+          if (voters.indexOf(h) !== -1) return 'dup';
+          voters.push(h); r.voters = voters; r.votes = (r.votes || 0) + 1; replies[idx] = r;
+          tx.update(ref, { replies: replies });
+          return 'ok';
+        }
+        const voters = (data.voters || []).slice();
+        if (voters.indexOf(h) !== -1) return 'dup';
+        voters.push(h);
+        tx.update(ref, { votes: (data.votes || 0) + 1, voters: voters });
+        return 'ok';
+      });
+    });
+    if (res === 'dup') { forum.data.voted[key] = 1; showToast('כבר הצבעתם כאן: מותר להצביע פעם אחת מכל כתובת IP.'); }
+    else if (res === 'ok') { forum.data.voted[key] = 1; showToast('ההצבעה נקלטה. תודה!'); }
     renderApp();
   } catch (err) {
     showToast('שגיאה בהצבעה: ' + err.message);
+  } finally {
+    forum.voting = false;
   }
 };
 
 function renderForumTab() {
-  const topics = POS_ORDER;
+  const topics = POS_ORDER.filter(function(t) { return t !== 'אחר'; }).concat(['שיעורי בית', 'אחר']);
   const d = forum.data;
+  if (!forum.ipRequested) {
+    forum.ipRequested = true;
+    forumIpHash().then(function(h) { if (h) { forumMyHash = h; forumRecomputeVoted(h); if (state.activeNav === 'forum') renderApp(); } });
+  }
   const voteBox = function(n, onclick, voted) {
-    return `<div class="flex flex-col items-center shrink-0 w-12"><button onclick="${onclick}" class="w-9 h-9 rounded-xl ${voted ? 'duo-btn-selected' : 'duo-btn-outline'} font-extrabold text-sm" title="הצבעה">▲</button><span class="text-sm font-extrabold text-[#4b4b4b] mt-1">${n || 0}</span></div>`;
+    return `<div class="flex flex-col items-center shrink-0 w-12"><button onclick="${onclick}" class="w-9 h-9 rounded-xl ${voted ? 'duo-btn-selected' : 'duo-btn-outline'} font-extrabold text-sm" title="הצבעה אחת מכל כתובת IP">▲</button><span class="text-sm font-extrabold text-[#4b4b4b] mt-1">${n || 0}</span></div>`;
   };
   const header = `<div class="p-6 rounded-2xl bg-[#e8f7ff] border-2 border-[#84d8ff] flex items-center justify-between gap-4">
     <div><span class="inline-block px-2.5 py-0.5 rounded-md bg-[#1cb0f6] text-white font-extrabold text-xs mb-2">שאלות ותשובות • أَسْئِلَة وَأَجْوِبَة</span>
     <h2 class="text-2xl font-extrabold text-[#3c3c3c]">קהילה (مُجْتَمَع)</h2>
-    <p class="text-sm font-bold text-[#4b4b4b] mt-1">שואלים, עונים ומצביעים על התשובות הטובות. כל שאלה שייכת לנושא מחלקי הדיבר (או ל״אחר״).</p>
+    <p class="text-sm font-bold text-[#4b4b4b] mt-1">שואלים, עונים ומצביעים על התשובות הטובות. כל שאלה שייכת לנושא מחלקי הדיבר, ל״שיעורי בית״ או ל״אחר״. מותר להצביע פעם אחת מכל כתובת IP.</p>
     <p class="text-[11px] font-bold text-[#777777] mt-1">השאלות נשמרות בענן ומוצגות לכל המשתמשים בזמן אמת.</p></div>
     ${getGazelleMascotHTML("w-20 h-24 shrink-0")}</div>`;
 
@@ -3596,7 +3677,7 @@ function renderForumTab() {
   const compose = forum.composing ? `<form onsubmit="forumSubmitPost(event)" class="p-5 bg-white rounded-2xl border-2 border-[#58cc02] space-y-3">
       <h4 class="font-extrabold">שאלה חדשה</h4>
       <input id="fq-name" required value="${escapeHtml(forumName())}" placeholder="השם שלכם" class="w-full p-3 border-2 border-[#e5e5e5] rounded-xl font-bold" />
-      <label class="block text-xs font-extrabold text-[#777777]">נושא (חלק דיבר)</label>
+      <label class="block text-xs font-extrabold text-[#777777]">נושא (חלק דיבר, שיעורי בית או אחר)</label>
       <select id="fq-topic" class="w-full p-3 border-2 border-[#e5e5e5] rounded-xl font-bold">${topicOpts}</select>
       <input id="fq-title" required dir="auto" placeholder="כותרת השאלה" class="w-full p-3 border-2 border-[#e5e5e5] rounded-xl font-bold" />
       <textarea id="fq-body" required rows="5" dir="auto" placeholder="פרטי השאלה: מה ניסיתם, מה לא ברור?" class="w-full p-3 border-2 border-[#e5e5e5] rounded-xl font-bold"></textarea>
