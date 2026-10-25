@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html dir="rtl" lang="he">
 <head>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>דעוה-לינגו - לימוד ערבית ספרותית</title>
@@ -3398,111 +3400,215 @@
     // ============================================================================
     // Q&A FORUM (thread style). Stored in this browser only: the site is a single file with no server.
     // ============================================================================
-    const FORUM_KEY = 'dawalingo_forum_v1';
-    function forumLoad() {
-      try { const d = JSON.parse(localStorage.getItem(FORUM_KEY) || 'null'); if (d && Array.isArray(d.posts)) return d; } catch (e) {}
-      return { posts: [{ id: 'p0', name: 'ע׳זאל', topic: 'אחר', title: 'ברוכים הבאים לפורום השאלות!', body: 'כאן שואלים כל שאלה על הערבית שלומדים בקורס: אוצר מילים, דקדוק, ניקוד או תרגום. בוחרים נושא, כותבים כותרת ושאלה, ואחרים יכולים לענות. אפשר גם להצביע על תשובות טובות ▲', ts: Date.now(), votes: 1, replies: [] }], voted: {} };
-    }
-    const forum = { data: forumLoad(), topic: 'הכל', sort: 'new', open: null, composing: false };
-    function forumSave() { try { localStorage.setItem(FORUM_KEY, JSON.stringify(forum.data)); } catch (e) {} }
-    function forumName() { try { return localStorage.getItem('dawalingo_forum_name') || ''; } catch (e) { return ''; } }
-    function forumAgo(ts) {
-      const m = Math.max(0, Math.round((Date.now() - ts) / 60000));
-      if (m < 1) return 'ממש עכשיו'; if (m < 60) return 'לפני ' + m + ' דקות';
-      const h = Math.round(m / 60); if (h < 24) return 'לפני ' + h + ' שעות';
-      return 'לפני ' + Math.round(h / 24) + ' ימים';
-    }
-    window.forumSetTopic = function(t) { forum.topic = t; renderApp(); };
-    window.forumSetSort = function(v) { forum.sort = v; renderApp(); };
-    window.forumToggleCompose = function() { forum.composing = !forum.composing; renderApp(); };
-    window.forumOpen = function(id) { forum.open = id; renderApp(); window.scrollTo(0, 0); };
-    window.forumBack = function() { forum.open = null; renderApp(); };
-    window.forumVote = function(id, replyId) {
-      const key = replyId ? id + ':' + replyId : id;
-      const d = forum.data; d.voted = d.voted || {};
-      if (d.voted[key]) { showToast('כבר הצבעתם כאן.'); return; }
-      const post = d.posts.find(function(x) { return x.id === id; }); if (!post) return;
-      if (replyId) { const r = post.replies.find(function(x) { return x.id === replyId; }); if (r) r.votes = (r.votes || 0) + 1; }
-      else post.votes = (post.votes || 0) + 1;
-      d.voted[key] = 1; forumSave(); renderApp();
-    };
-    window.forumSubmitPost = function(ev) {
-      ev.preventDefault();
-      const name = document.getElementById('fq-name').value.trim(), topic = document.getElementById('fq-topic').value;
-      const title = document.getElementById('fq-title').value.trim(), body = document.getElementById('fq-body').value.trim();
-      if (!name || !title || !body) { showToast('צריך למלא שם, כותרת ותוכן השאלה.'); return; }
-      try { localStorage.setItem('dawalingo_forum_name', name); } catch (e) {}
-      const post = { id: 'p' + Date.now(), name: name, topic: topic, title: title, body: body, ts: Date.now(), votes: 0, replies: [] };
-      forum.data.posts.unshift(post); forumSave(); forum.composing = false; forum.open = post.id; renderApp(); window.scrollTo(0, 0);
-    };
-    window.forumSubmitReply = function(ev, postId) {
-      ev.preventDefault();
-      const name = document.getElementById('fr-name').value.trim(), text = document.getElementById('fr-text').value.trim();
-      if (!name || !text) { showToast('צריך למלא שם ותשובה.'); return; }
-      try { localStorage.setItem('dawalingo_forum_name', name); } catch (e) {}
-      const post = forum.data.posts.find(function(x) { return x.id === postId; }); if (!post) return;
-      post.replies.push({ id: 'r' + Date.now(), name: name, text: text, ts: Date.now(), votes: 0 });
-      forumSave(); renderApp();
-    };
-    function renderForumTab() {
-      const topics = POS_ORDER;
-      const d = forum.data;
-      const voteBox = function(n, onclick, voted) {
-        return `<div class="flex flex-col items-center shrink-0 w-12"><button onclick="${onclick}" class="w-9 h-9 rounded-xl ${voted ? 'duo-btn-selected' : 'duo-btn-outline'} font-extrabold text-sm" title="הצבעה">▲</button><span class="text-sm font-extrabold text-[#4b4b4b] mt-1">${n || 0}</span></div>`;
-      };
-      const header = `<div class="p-6 rounded-2xl bg-[#e8f7ff] border-2 border-[#84d8ff] flex items-center justify-between gap-4">
-        <div><span class="inline-block px-2.5 py-0.5 rounded-md bg-[#1cb0f6] text-white font-extrabold text-xs mb-2">שאלות ותשובות • أَسْئِلَة وَأَجْوِبَة</span>
-        <h2 class="text-2xl font-extrabold text-[#3c3c3c]">קהילה (مُجْتَمَع)</h2>
-        <p class="text-sm font-bold text-[#4b4b4b] mt-1">שואלים, עונים ומצביעים על התשובות הטובות. כל שאלה שייכת לנושא מחלקי הדיבר (או ל״אחר״).</p>
-        <p class="text-[11px] font-bold text-[#777777] mt-1">שימו לב: השאלות נשמרות בדפדפן הזה בלבד. כדי שמשתמשים אחרים יראו אותן צריך לחבר לאתר מסד נתונים.</p></div>
-        ${getGazelleMascotHTML("w-20 h-24 shrink-0")}</div>`;
-      if (forum.open) {
-        const post = d.posts.find(function(x) { return x.id === forum.open; });
-        if (!post) { forum.open = null; return renderForumTab(); }
-        const replies = post.replies.slice().sort(function(a, b) { return (b.votes || 0) - (a.votes || 0) || a.ts - b.ts; });
-        const repliesHtml = replies.length ? replies.map(function(r) {
-          return `<div class="flex gap-3 p-4 rounded-2xl border-2 border-[#e5e5e5] bg-white">${voteBox(r.votes, `forumVote('${post.id}','${r.id}')`, d.voted && d.voted[post.id + ':' + r.id])}<div class="flex-1 min-w-0"><div class="text-xs font-extrabold text-[#777777]">${escapeHtml(r.name)} • ${forumAgo(r.ts)}</div><p class="mt-1 text-sm font-bold text-[#3c3c3c] whitespace-pre-wrap leading-relaxed" dir="auto">${escapeHtml(r.text)}</p></div></div>`;
-        }).join('') : `<p class="text-sm font-bold text-[#afafaf] text-center py-4">עדיין אין תשובות. אפשר להיות הראשונים!</p>`;
-        return `<div class="space-y-4 pb-24">${header}
-          <button onclick="forumBack()" class="text-sm font-extrabold text-[#1cb0f6] hover:underline">→ חזרה לכל השאלות</button>
-          <div class="flex gap-3 p-5 rounded-2xl border-2 border-[#84d8ff] bg-white">${voteBox(post.votes, `forumVote('${post.id}')`, d.voted && d.voted[post.id])}
-            <div class="flex-1 min-w-0"><div class="flex flex-wrap items-center gap-2 text-xs font-extrabold text-[#777777]"><span class="px-2 py-0.5 rounded-lg bg-[#f3e8ff] text-[#6f4ea1]">${escapeHtml(post.topic)}</span><span>${escapeHtml(post.name)}</span><span>•</span><span>${forumAgo(post.ts)}</span></div>
-            <h3 class="text-xl font-extrabold text-[#3c3c3c] mt-1" dir="auto">${escapeHtml(post.title)}</h3>
-            <p class="mt-2 text-sm font-bold text-[#4b4b4b] whitespace-pre-wrap leading-relaxed" dir="auto">${escapeHtml(post.body)}</p></div></div>
-          <h4 class="font-extrabold text-[#3c3c3c]">${post.replies.length} תשובות</h4>
-          <div class="space-y-3">${repliesHtml}</div>
-          <form onsubmit="forumSubmitReply(event, '${post.id}')" class="p-5 bg-white rounded-2xl border-2 border-[#e5e5e5] space-y-3">
-            <h4 class="font-extrabold text-sm">הוספת תשובה</h4>
-            <input id="fr-name" required value="${escapeHtml(forumName())}" placeholder="השם שלכם" class="w-full p-3 border-2 border-[#e5e5e5] rounded-xl font-bold" />
-            <textarea id="fr-text" required rows="4" dir="auto" placeholder="כתבו את התשובה כאן..." class="w-full p-3 border-2 border-[#e5e5e5] rounded-xl font-bold"></textarea>
-            <button class="duo-btn-green w-full p-3 rounded-xl font-extrabold">פרסום תשובה</button></form></div>`;
-      }
-      let posts = d.posts.filter(function(x) { return forum.topic === 'הכל' || x.topic === forum.topic; });
-      posts = posts.slice().sort(function(a, b) { return forum.sort === 'top' ? ((b.votes || 0) - (a.votes || 0) || b.ts - a.ts) : b.ts - a.ts; });
-      const chips = ['הכל'].concat(topics).map(function(t) { return `<button onclick="forumSetTopic('${escapeHtml(t)}')" class="px-3 py-1.5 rounded-xl text-xs font-extrabold ${forum.topic === t ? 'duo-btn-selected' : 'duo-btn-outline'}">${escapeHtml(t)}</button>`; }).join('');
-      const list = posts.length ? posts.map(function(x) {
-        return `<div class="flex gap-3 p-4 rounded-2xl border-2 border-[#e5e5e5] bg-white hover:bg-[#f7f7f7]">${voteBox(x.votes, `forumVote('${x.id}')`, d.voted && d.voted[x.id])}
-          <button onclick="forumOpen('${x.id}')" class="flex-1 min-w-0 text-right"><div class="flex flex-wrap items-center gap-2 text-[11px] font-extrabold text-[#777777]"><span class="px-2 py-0.5 rounded-lg bg-[#f3e8ff] text-[#6f4ea1]">${escapeHtml(x.topic)}</span><span>${escapeHtml(x.name)}</span><span>•</span><span>${forumAgo(x.ts)}</span></div>
-          <div class="font-extrabold text-[#3c3c3c] mt-1" dir="auto">${escapeHtml(x.title)}</div>
-          <div class="text-xs font-bold text-[#1cb0f6] mt-1">💬 ${x.replies.length} תשובות</div></button></div>`;
-      }).join('') : `<p class="text-center text-sm font-bold text-[#afafaf] py-8">אין עדיין שאלות בנושא הזה.</p>`;
-      const topicOpts = topics.map(function(t) { return `<option>${escapeHtml(t)}</option>`; }).join('');
-      const compose = forum.composing ? `<form onsubmit="forumSubmitPost(event)" class="p-5 bg-white rounded-2xl border-2 border-[#58cc02] space-y-3">
-          <h4 class="font-extrabold">שאלה חדשה</h4>
-          <input id="fq-name" required value="${escapeHtml(forumName())}" placeholder="השם שלכם" class="w-full p-3 border-2 border-[#e5e5e5] rounded-xl font-bold" />
-          <label class="block text-xs font-extrabold text-[#777777]">נושא (חלק דיבר)</label>
-          <select id="fq-topic" class="w-full p-3 border-2 border-[#e5e5e5] rounded-xl font-bold">${topicOpts}</select>
-          <input id="fq-title" required dir="auto" placeholder="כותרת השאלה" class="w-full p-3 border-2 border-[#e5e5e5] rounded-xl font-bold" />
-          <textarea id="fq-body" required rows="5" dir="auto" placeholder="פרטי השאלה: מה ניסיתם, מה לא ברור?" class="w-full p-3 border-2 border-[#e5e5e5] rounded-xl font-bold"></textarea>
-          <div class="flex gap-3"><button class="duo-btn-green flex-1 p-3 rounded-xl font-extrabold">פרסום שאלה</button><button type="button" onclick="forumToggleCompose()" class="duo-btn-outline px-5 rounded-xl font-extrabold text-sm">ביטול</button></div></form>` : '';
-      return `<div class="space-y-4 pb-24">${header}
-        <div class="flex flex-wrap items-center gap-2"><button onclick="forumToggleCompose()" class="duo-btn-green px-5 py-2.5 rounded-xl font-extrabold text-sm">✍️ שאלה חדשה</button>
-          <span class="mr-auto flex gap-1.5"><button onclick="forumSetSort('new')" class="px-3 py-1.5 rounded-xl text-xs font-extrabold ${forum.sort === 'new' ? 'duo-btn-selected' : 'duo-btn-outline'}">חדשות</button><button onclick="forumSetSort('top')" class="px-3 py-1.5 rounded-xl text-xs font-extrabold ${forum.sort === 'top' ? 'duo-btn-selected' : 'duo-btn-outline'}">פופולריות</button></span></div>
-        ${compose}
-        <div class="flex flex-wrap gap-1.5">${chips}</div>
-        <div class="space-y-3">${list}</div></div>`;
-    }
+// ============================================================================
+// חיבור ל-FIREBASE FIRESTORE בזמן אמת
+// ============================================================================
+const firebaseConfig = {
+  apiKey: "AIzaSyClsNFE5BVfpQfjr6ds8Z0UwKlRbrUpW2U",
+  authDomain: "dawalingo-a893b.firebaseapp.com",
+  projectId: "dawalingo-a893b",
+  storageBucket: "dawalingo-a893b.firebasestorage.app",
+  messagingSenderId: "369434448315",
+  appId: "1:369434448315:web:eeca58bf8dd2e28966f49e"
+};
 
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+const forum = {
+  data: { posts: [], voted: {} },
+  topic: 'הכל',
+  sort: 'new',
+  open: null,
+  composing: false
+};
+
+// האזנה לפוסטים בזמן אמת מהענן
+db.collection("forum_posts")
+  .orderBy("ts", "desc")
+  .onSnapshot(function(snapshot) {
+    const posts = [];
+    snapshot.forEach(function(doc) {
+      posts.push(Object.assign({ id: doc.id }, doc.data()));
+    });
+    forum.data.posts = posts;
+    if (state.activeNav === 'forum') {
+      renderApp();
+    }
+  });
+
+function forumName() {
+  try { return localStorage.getItem('dawalingo_forum_name') || ''; } catch (e) { return ''; }
+}
+
+function forumAgo(ts) {
+  const m = Math.max(0, Math.round((Date.now() - ts) / 60000));
+  if (m < 1) return 'ממש עכשיו';
+  if (m < 60) return 'לפני ' + m + ' דקות';
+  const h = Math.round(m / 60);
+  if (h < 24) return 'לפני ' + h + ' שעות';
+  return 'לפני ' + Math.round(h / 24) + ' ימים';
+}
+
+window.forumSetTopic = function(t) { forum.topic = t; renderApp(); };
+window.forumSetSort = function(v) { forum.sort = v; renderApp(); };
+window.forumToggleCompose = function() { forum.composing = !forum.composing; renderApp(); };
+window.forumOpen = function(id) { forum.open = id; renderApp(); window.scrollTo(0, 0); };
+window.forumBack = function() { forum.open = null; renderApp(); };
+
+window.forumSubmitPost = async function(ev) {
+  ev.preventDefault();
+  const name = document.getElementById('fq-name').value.trim();
+  const topic = document.getElementById('fq-topic').value;
+  const title = document.getElementById('fq-title').value.trim();
+  const body = document.getElementById('fq-body').value.trim();
+
+  if (!name || !title || !body) {
+    showToast('צריך למלא שם, כותרת ותוכן השאלה.');
+    return;
+  }
+
+  try {
+    localStorage.setItem('dawalingo_forum_name', name);
+    await db.collection("forum_posts").add({
+      name: name,
+      topic: topic,
+      title: title,
+      body: body,
+      ts: Date.now(),
+      votes: 0,
+      replies: []
+    });
+    forum.composing = false;
+    showToast('השאלה פורסמה בהצלחה לכולם!');
+  } catch (err) {
+    showToast('שגיאה בשמירה: ' + err.message);
+  }
+};
+
+window.forumSubmitReply = async function(ev, postId) {
+  ev.preventDefault();
+  const name = document.getElementById('fr-name').value.trim();
+  const text = document.getElementById('fr-text').value.trim();
+
+  if (!name || !text) {
+    showToast('צריך למלא שם ותשובה.');
+    return;
+  }
+
+  try {
+    localStorage.setItem('dawalingo_forum_name', name);
+    const postRef = db.collection("forum_posts").doc(postId);
+    const doc = await postRef.get();
+    if (doc.exists) {
+      const currentReplies = doc.data().replies || [];
+      currentReplies.push({
+        id: 'r' + Date.now(),
+        name: name,
+        text: text,
+        ts: Date.now(),
+        votes: 0
+      });
+      await postRef.update({ replies: currentReplies });
+      showToast('התשובה נוספה בהצלחה!');
+      renderApp();
+    }
+  } catch (err) {
+    showToast('שגיאה בשליחה: ' + err.message);
+  }
+};
+
+window.forumVote = async function(id, replyId) {
+  const key = replyId ? id + ':' + replyId : id;
+  forum.data.voted = forum.data.voted || {};
+  if (forum.data.voted[key]) {
+    showToast('כבר הצבעתם כאן.');
+    return;
+  }
+
+  try {
+    const postRef = db.collection("forum_posts").doc(id);
+    const doc = await postRef.get();
+    if (!doc.exists) return;
+
+    if (replyId) {
+      const currentReplies = doc.data().replies || [];
+      const reply = currentReplies.find(function(x) { return x.id === replyId; });
+      if (reply) {
+        reply.votes = (reply.votes || 0) + 1;
+        await postRef.update({ replies: currentReplies });
+      }
+    } else {
+      await postRef.update({ votes: (doc.data().votes || 0) + 1 });
+    }
+    forum.data.voted[key] = 1;
+    renderApp();
+  } catch (err) {
+    showToast('שגיאה בהצבעה: ' + err.message);
+  }
+};
+
+function renderForumTab() {
+  const topics = POS_ORDER;
+  const d = forum.data;
+  const voteBox = function(n, onclick, voted) {
+    return `<div class="flex flex-col items-center shrink-0 w-12"><button onclick="${onclick}" class="w-9 h-9 rounded-xl ${voted ? 'duo-btn-selected' : 'duo-btn-outline'} font-extrabold text-sm" title="הצבעה">▲</button><span class="text-sm font-extrabold text-[#4b4b4b] mt-1">${n || 0}</span></div>`;
+  };
+  const header = `<div class="p-6 rounded-2xl bg-[#e8f7ff] border-2 border-[#84d8ff] flex items-center justify-between gap-4">
+    <div><span class="inline-block px-2.5 py-0.5 rounded-md bg-[#1cb0f6] text-white font-extrabold text-xs mb-2">שאלות ותשובות • أَسْئِلَة وَأَجْوِبَة</span>
+    <h2 class="text-2xl font-extrabold text-[#3c3c3c]">קהילה (مُجْتَمَع)</h2>
+    <p class="text-sm font-bold text-[#4b4b4b] mt-1">שואלים, עונים ומצביעים על התשובות הטובות. כל שאלה שייכת לנושא מחלקי הדיבר (או ל״אחר״).</p>
+    <p class="text-[11px] font-bold text-[#777777] mt-1">השאלות נשמרות בענן ומוצגות לכל המשתמשים בזמן אמת.</p></div>
+    ${getGazelleMascotHTML("w-20 h-24 shrink-0")}</div>`;
+
+  if (forum.open) {
+    const post = d.posts.find(function(x) { return x.id === forum.open; });
+    if (!post) { forum.open = null; return renderForumTab(); }
+    const replies = (post.replies || []).slice().sort(function(a, b) { return (b.votes || 0) - (a.votes || 0) || a.ts - b.ts; });
+    const repliesHtml = replies.length ? replies.map(function(r) {
+      return `<div class="flex gap-3 p-4 rounded-2xl border-2 border-[#e5e5e5] bg-white">${voteBox(r.votes, `forumVote('${post.id}','${r.id}')`, d.voted && d.voted[post.id + ':' + r.id])}<div class="flex-1 min-w-0"><div class="text-xs font-extrabold text-[#777777]">${escapeHtml(r.name)} • ${forumAgo(r.ts)}</div><p class="mt-1 text-sm font-bold text-[#3c3c3c] whitespace-pre-wrap leading-relaxed" dir="auto">${escapeHtml(r.text)}</p></div></div>`;
+    }).join('') : `<p class="text-sm font-bold text-[#afafaf] text-center py-4">עדיין אין תשובות. אפשר להיות הראשונים!</p>`;
+    return `<div class="space-y-4 pb-24">${header}
+      <button onclick="forumBack()" class="text-sm font-extrabold text-[#1cb0f6] hover:underline">→ חזרה לכל השאלות</button>
+      <div class="flex gap-3 p-5 rounded-2xl border-2 border-[#84d8ff] bg-white">${voteBox(post.votes, `forumVote('${post.id}')`, d.voted && d.voted[post.id])}
+        <div class="flex-1 min-w-0"><div class="flex flex-wrap items-center gap-2 text-xs font-extrabold text-[#777777]"><span class="px-2 py-0.5 rounded-lg bg-[#f3e8ff] text-[#6f4ea1]">${escapeHtml(post.topic)}</span><span>${escapeHtml(post.name)}</span><span>•</span><span>${forumAgo(post.ts)}</span></div>
+        <h3 class="text-xl font-extrabold text-[#3c3c3c] mt-1" dir="auto">${escapeHtml(post.title)}</h3>
+        <p class="mt-2 text-sm font-bold text-[#4b4b4b] whitespace-pre-wrap leading-relaxed" dir="auto">${escapeHtml(post.body)}</p></div></div>
+      <h4 class="font-extrabold text-[#3c3c3c]">${(post.replies || []).length} תשובות</h4>
+      <div class="space-y-3">${repliesHtml}</div>
+      <form onsubmit="forumSubmitReply(event, '${post.id}')" class="p-5 bg-white rounded-2xl border-2 border-[#e5e5e5] space-y-3">
+        <h4 class="font-extrabold text-sm">הוספת תשובה</h4>
+        <input id="fr-name" required value="${escapeHtml(forumName())}" placeholder="השם שלכם" class="w-full p-3 border-2 border-[#e5e5e5] rounded-xl font-bold" />
+        <textarea id="fr-text" required rows="4" dir="auto" placeholder="כתבו את התשובה כאן..." class="w-full p-3 border-2 border-[#e5e5e5] rounded-xl font-bold"></textarea>
+        <button class="duo-btn-green w-full p-3 rounded-xl font-extrabold">פרסום תשובה</button></form></div>`;
+  }
+
+  let posts = d.posts.filter(function(x) { return forum.topic === 'הכל' || x.topic === forum.topic; });
+  posts = posts.slice().sort(function(a, b) { return forum.sort === 'top' ? ((b.votes || 0) - (a.votes || 0) || b.ts - a.ts) : b.ts - a.ts; });
+  const chips = ['הכל'].concat(topics).map(function(t) { return `<button onclick="forumSetTopic('${escapeHtml(t)}')" class="px-3 py-1.5 rounded-xl text-xs font-extrabold ${forum.topic === t ? 'duo-btn-selected' : 'duo-btn-outline'}">${escapeHtml(t)}</button>`; }).join('');
+  const list = posts.length ? posts.map(function(x) {
+    return `<div class="flex gap-3 p-4 rounded-2xl border-2 border-[#e5e5e5] bg-white hover:bg-[#f7f7f7]">${voteBox(x.votes, `forumVote('${x.id}')`, d.voted && d.voted[x.id])}
+      <button onclick="forumOpen('${x.id}')" class="flex-1 min-w-0 text-right"><div class="flex flex-wrap items-center gap-2 text-[11px] font-extrabold text-[#777777]"><span class="px-2 py-0.5 rounded-lg bg-[#f3e8ff] text-[#6f4ea1]">${escapeHtml(x.topic)}</span><span>${escapeHtml(x.name)}</span><span>•</span><span>${forumAgo(x.ts)}</span></div>
+      <div class="font-extrabold text-[#3c3c3c] mt-1" dir="auto">${escapeHtml(x.title)}</div>
+      <div class="text-xs font-bold text-[#1cb0f6] mt-1">💬 ${(x.replies || []).length} תשובות</div></button></div>`;
+  }).join('') : `<p class="text-center text-sm font-bold text-[#afafaf] py-8">אין עדיין שאלות בנושא הזה.</p>`;
+  const topicOpts = topics.map(function(t) { return `<option>${escapeHtml(t)}</option>`; }).join('');
+  const compose = forum.composing ? `<form onsubmit="forumSubmitPost(event)" class="p-5 bg-white rounded-2xl border-2 border-[#58cc02] space-y-3">
+      <h4 class="font-extrabold">שאלה חדשה</h4>
+      <input id="fq-name" required value="${escapeHtml(forumName())}" placeholder="השם שלכם" class="w-full p-3 border-2 border-[#e5e5e5] rounded-xl font-bold" />
+      <label class="block text-xs font-extrabold text-[#777777]">נושא (חלק דיבר)</label>
+      <select id="fq-topic" class="w-full p-3 border-2 border-[#e5e5e5] rounded-xl font-bold">${topicOpts}</select>
+      <input id="fq-title" required dir="auto" placeholder="כותרת השאלה" class="w-full p-3 border-2 border-[#e5e5e5] rounded-xl font-bold" />
+      <textarea id="fq-body" required rows="5" dir="auto" placeholder="פרטי השאלה: מה ניסיתם, מה לא ברור?" class="w-full p-3 border-2 border-[#e5e5e5] rounded-xl font-bold"></textarea>
+      <div class="flex gap-3"><button class="duo-btn-green flex-1 p-3 rounded-xl font-extrabold">פרסום שאלה</button><button type="button" onclick="forumToggleCompose()" class="duo-btn-outline px-5 rounded-xl font-extrabold text-sm">ביטול</button></div></form>` : '';
+
+  return `<div class="space-y-4 pb-24">${header}
+    <div class="flex flex-wrap items-center gap-2"><button onclick="forumToggleCompose()" class="duo-btn-green px-5 py-2.5 rounded-xl font-extrabold text-sm">✍️ שאלה חדשה</button>
+      <span class="mr-auto flex gap-1.5"><button onclick="forumSetSort('new')" class="px-3 py-1.5 rounded-xl text-xs font-extrabold ${forum.sort === 'new' ? 'duo-btn-selected' : 'duo-btn-outline'}">חדשות</button><button onclick="forumSetSort('top')" class="px-3 py-1.5 rounded-xl text-xs font-extrabold ${forum.sort === 'top' ? 'duo-btn-selected' : 'duo-btn-outline'}">פופולריות</button></span></div>
+    ${compose}
+    <div class="flex flex-wrap gap-1.5">${chips}</div>
+    <div class="space-y-3">${list}</div></div>`;
+}
     // ============================================================================
     // ARABIC ON-SCREEN KEYBOARD (types into whichever text field was focused last)
     // ============================================================================
