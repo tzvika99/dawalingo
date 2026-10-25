@@ -3580,7 +3580,7 @@ window.forumVote = async function(id, replyId) {
   const key = replyId ? id + ':' + replyId : id;
   forum.data.voted = forum.data.voted || {};
   if (forum.data.voted[key]) {
-    showToast('כבר הצבעתם כאן. מותר להצביע פעם אחת מכל כתובת IP.');
+    showToast('כבר הצבעתם כאן. מותר להצביע פעם אחת.');
     return;
   }
   if (forum.voting) return;
