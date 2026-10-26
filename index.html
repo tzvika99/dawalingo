@@ -3815,29 +3815,72 @@ function renderForumTab() {
     // אפשר להדביק כאן מפתח Gemini API (aistudio.google.com/apikey). אם משאירים ריק,
     // הצ׳אט יבקש את המפתח בפעם הראשונה וישמור אותו רק בדפדפן של המשתמש.
     const GEMINI_API_KEY = '';
-    const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'];
+    // מהיר לפני חכם: flash-lite ראשון, והגדלת מהירות נוספת על ידי כיבוי ״החשיבה״ בדגמי 2.5, הגבלת אורך התשובה,
+    // שליחת ההיסטוריה האחרונה בלבד והצגת התשובה בהדרגה (streaming).
+    const GEMINI_MODELS = ['gemini-2.5-flash-lite', 'gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.0-flash'];
     function gzSleep(ms) { return new Promise(function(r) { setTimeout(r, ms); }); }
-    async function gzCallGemini(key, onWait) {
+    function gzGenConfig(model) {
+      const cfg = { temperature: 0.6, maxOutputTokens: 1200 };
+      if (/^gemini-2\.5-flash/.test(model)) cfg.thinkingConfig = { thinkingBudget: 0 };
+      return cfg;
+    }
+    function gzTrimHistory() {
+      const h = gazelleChat.history.slice(-6);
+      while (h.length && h[0].role !== 'user') h.shift();
+      return h;
+    }
+    function gzTextOf(j) {
+      const parts = j && j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts;
+      return parts ? parts.map(function(p) { return p.text || ''; }).join('') : '';
+    }
+    async function gzReadStream(res, onText) {
+      let full = '';
+      const feed = function(line) {
+        line = line.trim();
+        if (line.indexOf('data:') !== 0) return;
+        const js = line.slice(5).trim();
+        if (!js || js === '[DONE]') return;
+        try { const add = gzTextOf(JSON.parse(js)); if (add) { full += add; if (onText) onText(full); } } catch (e) {}
+      };
+      if (!res.body || !res.body.getReader) { (await res.text()).split('\n').forEach(feed); return full.trim(); }
+      const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = '';
+      for (;;) {
+        const r = await reader.read(); if (r.done) break;
+        buf += dec.decode(r.value, { stream: true });
+        let idx;
+        while ((idx = buf.indexOf('\n')) >= 0) { feed(buf.slice(0, idx)); buf = buf.slice(idx + 1); }
+      }
+      if (buf) feed(buf);
+      return full.trim();
+    }
+    async function gzCallGemini(key, onWait, onText) {
       let sawBusy = false, sawQuota = false;
-      for (let round = 0; round < 3; round++) {
+      for (let round = 0; round < 2; round++) {
         for (let m = 0; m < GEMINI_MODELS.length; m++) {
-          let res, data;
+          const model = GEMINI_MODELS[m];
+          let res;
           try {
-            res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODELS[m] + ':generateContent', {
+            res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':streamGenerateContent?alt=sse', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-              body: JSON.stringify({ systemInstruction: { parts: [{ text: GAZELLE_SYSTEM_PROMPT }] }, contents: gazelleChat.history, generationConfig: { temperature: 0.6 } })
+              body: JSON.stringify({ systemInstruction: { parts: [{ text: GAZELLE_SYSTEM_PROMPT }] }, contents: gzTrimHistory(), generationConfig: gzGenConfig(model) })
             });
-            data = await res.json().catch(function() { return {}; });
           } catch (netErr) { sawBusy = true; continue; }
-          if (res.ok) { if (data.candidates && data.candidates.length) return data; continue; }
-          const msg = (data && data.error && data.error.message) || '';
-          if (res.status === 401 || res.status === 403 || (res.status === 400 && /api key/i.test(msg))) {
-            const e = new Error('המפתח לא תקין או חסרה לו הרשאה. בדקו אותו דרך ⚙️.'); e.fatal = true; throw e;
+          if (!res.ok) {
+            const data = await res.json().catch(function() { return {}; });
+            const msg = (data && data.error && data.error.message) || '';
+            if (res.status === 401 || res.status === 403 || (res.status === 400 && /api key/i.test(msg))) {
+              const e = new Error('המפתח לא תקין או חסרה לו הרשאה. בדקו אותו דרך ⚙️.'); e.fatal = true; throw e;
+            }
+            if (res.status === 429) sawQuota = true; else sawBusy = true;
+            continue;
           }
-          if (res.status === 429) sawQuota = true; else sawBusy = true;
+          try {
+            const text = await gzReadStream(res, onText);
+            if (text) return text;
+          } catch (streamErr) { sawBusy = true; }
         }
-        if (round < 2) { if (onWait) onWait(round); await gzSleep(1800 * (round + 1)); }
+        if (round < 1) { if (onWait) onWait(round); await gzSleep(1200); }
       }
       throw new Error(sawBusy ? 'ע׳זאל עמוס כרגע: השרת של Gemini מקבל יותר מדי בקשות. ניסיתי כמה מודלים ולא הצלחתי. נסו שוב בעוד רגע.' : sawQuota ? 'חרגתם ממכסת הבקשות של המפתח. נסו שוב בעוד דקה.' : 'לא התקבלה תשובה. נסו לנסח את השאלה אחרת.');
     }
@@ -3963,9 +4006,8 @@ function renderForumTab() {
       document.getElementById('gz-send').disabled = true;
       const typing = gzAddBubble('model', '<span class="gz-dot"></span><span class="gz-dot"></span><span class="gz-dot"></span>');
       try {
-        const data = await gzCallGemini(key, function() { typing.innerHTML = '<span class="text-xs font-bold text-[#777777]">השרת עמוס, מנסה שוב...</span> <span class="gz-dot"></span><span class="gz-dot"></span><span class="gz-dot"></span>'; });
-        const parts = data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts;
-        const reply = parts ? parts.map(function(p) { return p.text || ''; }).join('').trim() : '';
+        const logEl = document.getElementById('gz-log');
+        const reply = await gzCallGemini(key, function() { typing.innerHTML = '<span class="text-xs font-bold text-[#777777]">השרת עמוס, מנסה שוב...</span> <span class="gz-dot"></span><span class="gz-dot"></span><span class="gz-dot"></span>'; }, function(full) { typing.innerHTML = gzFormat(full); logEl.scrollTop = logEl.scrollHeight; });
         if (!reply) throw new Error('לא התקבלה תשובה. נסו לנסח את השאלה אחרת.');
         gazelleChat.history.push({ role: 'model', parts: [{ text: reply }] });
         typing.innerHTML = gzFormat(reply);
