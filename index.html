@@ -156,6 +156,75 @@
     @keyframes gzDots { 0%,80%,100% { opacity:.25 } 40% { opacity:1 } }
     .gz-dot { display:inline-block; width:7px; height:7px; margin:0 2px; border-radius:50%; background:#999; animation: gzDots 1.2s infinite; }
     .gz-dot:nth-child(2){ animation-delay:.2s } .gz-dot:nth-child(3){ animation-delay:.4s }
+  
+
+    /* ------------------------------------------------------------------
+       Mobile-first improvements for Dawalingo
+       ------------------------------------------------------------------ */
+    html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+    body { overflow-x: hidden; }
+    #app, #app * { min-width: 0; }
+    button, input, textarea, select { touch-action: manipulation; }
+    .mobile-nav-label { display: none; }
+    .music-embed { display:block; width:100%; border:0; border-radius:14px; background:#f7f7f7; }
+    .music-card { min-width:0; overflow:hidden; }
+    .music-card iframe { max-width:100%; }
+
+    /* The chat stays to the left and the Arabic keyboard to the right. */
+    #ar-keyboard-root .kb-panel { right: 12px !important; left: auto !important; }
+    #gz-panel { left: 12px !important; right: auto !important; }
+
+    @media (max-width: 767px) {
+      .dawalingo-shell { display:block !important; min-height:100dvh; }
+      #primary-sidebar {
+        position:fixed !important; top:auto !important; bottom:0 !important; left:0 !important; right:0 !important;
+        z-index:90 !important; display:flex !important; flex-direction:row !important; justify-content:center !important;
+        width:100% !important; height:auto !important; min-height:0 !important; padding:6px 6px calc(6px + env(safe-area-inset-bottom)) !important;
+        background:rgba(255,255,255,.97) !important; backdrop-filter:blur(12px);
+        border:0 !important; border-top:2px solid #e5e5e5 !important; box-shadow:0 -8px 28px rgba(0,0,0,.07);
+      }
+      #primary-sidebar > div:first-child { width:100%; }
+      #primary-sidebar > div:first-child > div:first-child { display:none !important; }
+      #primary-sidebar nav { display:grid !important; grid-template-columns:repeat(6,minmax(0,1fr)); gap:2px !important; width:100%; }
+      #primary-sidebar nav > * + * { margin-top:0 !important; }
+      #primary-sidebar nav button {
+        display:flex !important; flex-direction:column !important; justify-content:center !important; align-items:center !important;
+        gap:3px !important; width:100% !important; min-height:54px; padding:6px 2px !important; border-radius:13px !important;
+        font-size:10px !important; line-height:1.05 !important;
+      }
+      #primary-sidebar nav button span:first-child { display:block !important; font-size:19px !important; line-height:1 !important; }
+      #primary-sidebar nav button .hidden.xl\:inline { display:none !important; }
+      #primary-sidebar nav button .mobile-nav-label { display:block !important; font-size:9px; line-height:1.05; white-space:nowrap; }
+      #primary-sidebar > div:last-child { display:none !important; }
+      .dawalingo-main { display:block !important; width:100% !important; max-width:none !important; padding:14px 12px calc(108px + env(safe-area-inset-bottom)) !important; }
+      .dawalingo-hero { padding:15px !important; gap:10px !important; border-radius:22px !important; }
+      .dawalingo-hero h1 { font-size:1.38rem !important; line-height:1.25 !important; }
+      .dawalingo-hero .kb-toggle-btn { min-height:42px; }
+      .dawalingo-main input, .dawalingo-main textarea, .dawalingo-main select { max-width:100%; font-size:16px; }
+      .dawalingo-main .text-2xl { overflow-wrap:anywhere; }
+      .dawalingo-main .overflow-x-auto { -webkit-overflow-scrolling:touch; }
+      #ar-keyboard-root .kb-panel {
+        right:8px !important; left:auto !important; bottom:calc(72px + env(safe-area-inset-bottom)) !important;
+        width:min(calc(100vw - 16px), 380px) !important; max-height:46dvh; overflow:auto; z-index:80 !important;
+      }
+      #gz-panel {
+        top:max(8px, env(safe-area-inset-top)) !important; bottom:auto !important; left:8px !important; right:8px !important;
+        width:auto !important; max-width:none !important; height:min(68dvh,560px) !important;
+        max-height:calc(100dvh - 100px) !important; border-radius:22px !important;
+      }
+      #gz-panel form { padding-bottom:max(12px, env(safe-area-inset-bottom)) !important; }
+      .music-form-grid { grid-template-columns:minmax(0,1fr) !important; }
+      .music-card .music-meta { align-items:flex-start; }
+    }
+    @media (min-width: 768px) and (max-width: 1023px) {
+      .dawalingo-main { padding-left:18px !important; padding-right:18px !important; }
+    }
+    @media (max-width: 380px) {
+      #primary-sidebar nav button .mobile-nav-label { font-size:8px; }
+      #primary-sidebar nav button { min-height:50px; }
+      .dawalingo-main { padding-left:9px !important; padding-right:9px !important; }
+    }
+
   </style>
 </head>
 <body class="bg-white text-[#3c3c3c] selection:bg-[#d7ffb8]">
@@ -3548,6 +3617,183 @@ function forumName() {
   try { return localStorage.getItem('dawalingo_forum_name') || ''; } catch (e) { return ''; }
 }
 
+
+// ============================================================================
+// MUSIC ROOM — share supported streaming links, never upload copyrighted audio
+// ============================================================================
+const musicRoom = { posts: [], composing: false, filter: 'הכל', loaded: false, error: '', saving: false };
+
+db.collection('music_posts').orderBy('ts', 'desc').limit(80).onSnapshot(function(snapshot) {
+  musicRoom.posts = [];
+  snapshot.forEach(function(doc) { musicRoom.posts.push(Object.assign({ id: doc.id }, doc.data())); });
+  musicRoom.loaded = true;
+  musicRoom.error = '';
+  if (state.activeNav === 'music' && !musicRoom.composing && !musicRoom.saving) renderApp();
+}, function(err) {
+  musicRoom.loaded = true;
+  musicRoom.error = 'לא ניתן לטעון את מדור המוזיקה ממסד הנתונים. ייתכן שצריך לאפשר קריאה לאוסף music_posts בכללי Firebase.';
+  if (state.activeNav === 'music' && !musicRoom.composing) renderApp();
+});
+
+function musicParseUrl(raw) {
+  try {
+    const u = new URL(String(raw || '').trim());
+    if (u.protocol !== 'https:' || u.username || u.password) return null;
+    const host = u.hostname.toLowerCase().replace(/^www\./, '');
+    if (host === 'youtu.be' || host === 'youtube.com' || host === 'm.youtube.com' || host === 'music.youtube.com') {
+      let id = '';
+      if (host === 'youtu.be') id = u.pathname.split('/').filter(Boolean)[0] || '';
+      else if (u.pathname === '/watch') id = u.searchParams.get('v') || '';
+      else {
+        const m = u.pathname.match(/^\/(?:embed|shorts|live)\/([A-Za-z0-9_-]{6,})/);
+        if (m) id = m[1];
+      }
+      if (id && /^[A-Za-z0-9_-]{6,}$/.test(id)) return { platform: 'YouTube', url: u.href, embedUrl: 'https://www.youtube-nocookie.com/embed/' + id, embedType: 'youtube' };
+      return { platform: 'YouTube', url: u.href, embedUrl: '', embedType: 'link' };
+    }
+    if (host === 'open.spotify.com') {
+      const m = u.pathname.match(/^\/(track|album|playlist|artist|episode|show)\/([A-Za-z0-9]+)\/?$/);
+      if (m) return { platform: 'Spotify', url: 'https://open.spotify.com/' + m[1] + '/' + m[2], embedUrl: 'https://open.spotify.com/embed/' + m[1] + '/' + m[2], embedType: 'spotify', spotifyType: m[1] };
+      return { platform: 'Spotify', url: u.href, embedUrl: '', embedType: 'link' };
+    }
+    if (host === 'soundcloud.com' || host.endsWith('.soundcloud.com')) {
+      const clean = u.href.split('#')[0];
+      return { platform: 'SoundCloud', url: clean, embedUrl: 'https://w.soundcloud.com/player/?url=' + encodeURIComponent(clean) + '&color=%231cb0f6&auto_play=false&hide_related=true&show_comments=false&show_user=true&show_reposts=false&visual=true', embedType: 'soundcloud' };
+    }
+    if (host === 'music.apple.com' || host === 'music.youtube.com') return { platform: host === 'music.apple.com' ? 'Apple Music' : 'YouTube Music', url: u.href, embedUrl: '', embedType: 'link' };
+    return { platform: 'קישור חיצוני', url: u.href, embedUrl: '', embedType: 'link' };
+  } catch (e) { return null; }
+}
+
+window.musicToggleCompose = function() { musicRoom.composing = !musicRoom.composing; renderApp(); };
+window.musicSetFilter = function(value) { musicRoom.filter = value; renderApp(); };
+window.musicSubmit = async function(event) {
+  if (event && event.preventDefault) event.preventDefault();
+  if (musicRoom.saving) return;
+  const getVal = function(id) { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  const title = getVal('music-title').slice(0, 120);
+  const artist = getVal('music-artist').slice(0, 120);
+  const urlRaw = getVal('music-url');
+  const note = getVal('music-note').slice(0, 500);
+  const learnedWord = getVal('music-word').slice(0, 100);
+  const name = (getVal('music-name') || forumName() || 'אורח/ת').slice(0, 60);
+  const vibe = getVal('music-vibe') || 'אחר';
+  const parsed = musicParseUrl(urlRaw);
+  const status = document.getElementById('music-status');
+  if (!title) { if (status) status.textContent = 'צריך להוסיף שם לשיר או ליצירה.'; return; }
+  if (!parsed) { if (status) status.textContent = 'הקישור לא תקין. הדביקו קישור שמתחיל ב-https://'; return; }
+  musicRoom.saving = true;
+  const submitButton = document.getElementById('music-submit-button');
+  if (submitButton) { submitButton.disabled = true; submitButton.textContent = 'מפרסמים…'; }
+  if (status) status.textContent = 'מפרסמים את ההמלצה לקהילה…';
+  try {
+    await db.collection('music_posts').add({
+      title: title, artist: artist, url: parsed.url, platform: parsed.platform,
+      vibe: vibe, note: note, learnedWord: learnedWord, name: name, ts: Date.now()
+    });
+    try { localStorage.setItem('dawalingo_forum_name', name); } catch (e) {}
+    musicRoom.composing = false;
+    showToast('השיר נוסף למדור המוזיקה! 🎧');
+    renderApp();
+  } catch (err) {
+    const msg = 'לא הצלחנו לפרסם לענן. בדקו את החיבור ואת כללי Firestore עבור music_posts.';
+    if (status) status.textContent = msg;
+    showToast(msg);
+  } finally {
+    musicRoom.saving = false;
+    if (state.activeNav === 'music' && musicRoom.composing) {
+      const b = document.getElementById('music-submit-button');
+      if (b) { b.disabled = false; b.textContent = 'שיתוף עם הקהילה'; }
+    }
+  }
+};
+
+window.musicCopyLink = async function(id) {
+  const post = musicRoom.posts.find(function(p) { return p.id === id; });
+  if (!post) return;
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(post.url);
+      showToast('קישור לשיר הועתק.');
+    } else {
+      window.prompt('העתיקו את הקישור לשיר:', post.url);
+    }
+  } catch (e) { window.prompt('העתיקו את הקישור לשיר:', post.url); }
+};
+
+function renderMusicTab() {
+  const filters = ['הכל', 'YouTube', 'Spotify', 'SoundCloud', 'Apple Music', 'קישור חיצוני'];
+  const allPosts = musicRoom.posts.filter(function(p) { return !!musicParseUrl(p.url); });
+  const visiblePosts = allPosts.filter(function(p) {
+    if (musicRoom.filter === 'הכל') return true;
+    const parsed = musicParseUrl(p.url);
+    return parsed && (parsed.platform === musicRoom.filter || (musicRoom.filter === 'YouTube' && parsed.platform === 'YouTube Music'));
+  });
+  const chips = filters.map(function(f) {
+    return `<button type="button" onclick="musicSetFilter('${f}')" class="px-3 py-2 rounded-xl text-xs font-extrabold ${musicRoom.filter === f ? 'duo-btn-selected' : 'duo-btn-outline'}">${f === 'הכל' ? '🎶 הכול' : escapeHtml(f)}</button>`;
+  }).join('');
+  const compose = musicRoom.composing ? `
+    <form onsubmit="musicSubmit(event)" class="p-4 sm:p-5 rounded-2xl border-2 border-[#58cc02] bg-white space-y-3">
+      <h3 class="font-extrabold text-lg">מוסיפים שיר למדף 🎵</h3>
+      <p class="text-xs font-bold text-[#777777]">מדביקים קישור רשמי — האתר ייצור נגן כשאפשר, בלי להעתיק או לאחסן את קובץ המוזיקה עצמו.</p>
+      <div class="grid grid-cols-2 gap-3 music-form-grid">
+        <label class="block text-sm font-bold">שם השיר / היצירה *<input id="music-title" maxlength="120" required class="mt-1 w-full p-3 rounded-xl border-2 border-[#e5e5e5] font-bold" placeholder="למשל: فيروز — نسم علينا الهوى" /></label>
+        <label class="block text-sm font-bold">אמן / מבצע<input id="music-artist" maxlength="120" class="mt-1 w-full p-3 rounded-xl border-2 border-[#e5e5e5]" placeholder="פיירוז, אום כולתום…" /></label>
+      </div>
+      <label class="block text-sm font-bold">קישור ל-YouTube, Spotify, SoundCloud או אתר מוזיקה אחר *<input id="music-url" type="url" dir="ltr" required maxlength="500" class="mt-1 w-full p-3 rounded-xl border-2 border-[#84d8ff] font-medium text-sm" placeholder="https://youtu.be/... או https://open.spotify.com/..." /></label>
+      <div class="grid grid-cols-2 gap-3 music-form-grid">
+        <label class="block text-sm font-bold">האווירה של השיר<select id="music-vibe" class="mt-1 w-full p-3 rounded-xl border-2 border-[#e5e5e5]"><option>קלאסי</option><option>פופ</option><option>היפ-הופ</option><option>עממי / تراث</option><option>רגוע</option><option>קצבי</option><option>אחר</option></select></label>
+        <label class="block text-sm font-bold">השם שיופיע בפרסום<input id="music-name" maxlength="60" value="${escapeHtml(forumName())}" class="mt-1 w-full p-3 rounded-xl border-2 border-[#e5e5e5]" placeholder="השם שלכם" /></label>
+      </div>
+      <label class="block text-sm font-bold">מילה בערבית שלמדתם מהשיר (לא חובה)<input id="music-word" maxlength="100" dir="auto" class="mt-1 w-full p-3 rounded-xl border-2 border-[#e5e5e5] font-arabic text-lg" placeholder="מילה חדשה + פירוש בעברית" /></label>
+      <label class="block text-sm font-bold">למה כדאי להאזין? (לא חובה)<textarea id="music-note" maxlength="500" rows="2" class="mt-1 w-full p-3 rounded-xl border-2 border-[#e5e5e5]" placeholder="המלצה קצרה, סגנון, ניב או סיפור מאחורי השיר…"></textarea></label>
+      <p id="music-status" class="text-xs font-bold text-[#777777]" aria-live="polite"></p>
+      <div class="flex flex-wrap gap-2"><button id="music-submit-button" type="submit" class="duo-btn-green flex-1 min-w-[150px] p-3 rounded-xl font-extrabold">שיתוף עם הקהילה</button><button type="button" onclick="musicToggleCompose()" class="duo-btn-outline px-5 py-3 rounded-xl font-extrabold">ביטול</button></div>
+    </form>` : '';
+  const cards = visiblePosts.map(function(p) {
+    const parsed = musicParseUrl(p.url);
+    if (!parsed) return '';
+    let embed = '';
+    if (parsed.embedType === 'youtube') {
+      embed = `<iframe class="music-embed" style="height:clamp(190px,52vw,315px)" src="${parsed.embedUrl}" title="${escapeHtml(p.title || 'YouTube music player')}" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>`;
+    } else if (parsed.embedType === 'spotify') {
+      const h = parsed.spotifyType === 'playlist' || parsed.spotifyType === 'album' || parsed.spotifyType === 'show' ? 300 : 152;
+      embed = `<iframe class="music-embed" style="height:${h}px" src="${parsed.embedUrl}" title="${escapeHtml(p.title || 'Spotify player')}" loading="lazy" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" allowfullscreen></iframe>`;
+    } else if (parsed.embedType === 'soundcloud') {
+      embed = `<iframe class="music-embed" style="height:190px" src="${parsed.embedUrl}" title="${escapeHtml(p.title || 'SoundCloud player')}" loading="lazy" allow="autoplay" referrerpolicy="strict-origin-when-cross-origin"></iframe>`;
+    } else {
+      embed = `<a href="${escapeHtml(parsed.url)}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-3 p-4 rounded-xl bg-[#f7f7f7] border-2 border-dashed border-[#e5e5e5] text-[#1cb0f6] font-extrabold"><span class="text-2xl">🔗</span><span>פתיחת השיר ב-${escapeHtml(parsed.platform)} ↗<span class="block mt-1 text-xs font-bold text-[#777777]">ההטמעה אינה זמינה לפלטפורמה הזו — הקישור נשמר.</span></span></a>`;
+    }
+    const vibe = p.vibe ? `<span class="px-2.5 py-1 rounded-lg bg-[#fff5d3] text-[#8c4103] text-[11px] font-extrabold">${escapeHtml(p.vibe)}</span>` : '';
+    return `<article class="music-card p-3 sm:p-4 rounded-2xl border-2 border-[#e5e5e5] bg-white space-y-3 shadow-sm">
+      <div class="music-meta flex flex-wrap items-center gap-2"><span class="w-10 h-10 rounded-xl bg-[#ddf4ff] flex items-center justify-center text-xl">${parsed.platform === 'Spotify' ? '🟢' : parsed.platform === 'YouTube' ? '▶️' : parsed.platform === 'SoundCloud' ? '🎧' : '🎵'}</span>
+        <div class="flex-1 min-w-0"><h3 class="font-extrabold text-base sm:text-lg leading-snug break-words">${escapeHtml(p.title || 'יצירה ללא שם')}</h3><p class="text-xs font-bold text-[#777777]">${escapeHtml(p.artist || 'אמן לא צוין')} • ${escapeHtml(parsed.platform)}</p></div>${vibe}</div>
+      ${embed}
+      ${p.learnedWord ? `<div class="p-3 rounded-xl bg-[#d7ffb8]/45 border border-[#b6e98f]"><span class="text-[11px] font-extrabold text-[#58a700]">מילה שלוקחים מהשיר</span><p class="font-arabic text-xl font-bold" dir="auto">${escapeHtml(p.learnedWord)}</p></div>` : ''}
+      ${p.note ? `<p class="text-sm font-medium leading-relaxed whitespace-pre-wrap">${escapeHtml(p.note)}</p>` : ''}
+      <div class="flex items-center justify-between gap-2 pt-1"><span class="text-[11px] font-bold text-[#999999]">שיתוף מאת ${escapeHtml(p.name || 'חבר/ת הקהילה')}</span><button type="button" onclick="musicCopyLink('${escapeHtml(p.id)}')" class="duo-btn-outline px-3 py-2 rounded-xl text-xs font-extrabold">🔗 העתקת קישור</button></div>
+    </article>`;
+  }).join('');
+  const empty = musicRoom.error
+    ? `<div class="p-4 rounded-2xl bg-[#fff5d3] border-2 border-[#ffc800] text-sm font-bold text-[#8c4103]">${escapeHtml(musicRoom.error)}<p class="mt-2 font-medium">אפשר לבדוק ב-Firebase Console את כללי Firestore לאוסף <code>music_posts</code>.</p></div>`
+    : !musicRoom.loaded ? `<div class="p-5 text-center text-sm font-bold text-[#777777]">טוענים את מדף המוזיקה…</div>`
+    : !visiblePosts.length ? `<div class="p-6 rounded-2xl border-2 border-dashed border-[#e5e5e5] text-center space-y-2"><div class="text-4xl">🎼</div><h3 class="font-extrabold text-lg">המדף עוד מחכה לשיר הראשון</h3><p class="text-sm font-bold text-[#777777]">שתפו שיר בערבית שאתם אוהבים — אולי מישהו יגלה דרכו מילה חדשה או אמן שלא הכיר.</p></div>` : '';
+  return `<div class="space-y-5 pb-24">
+    <div class="p-5 sm:p-6 rounded-2xl bg-gradient-to-l from-[#ddf4ff] via-white to-[#f3e8ff] border-2 border-[#84d8ff] space-y-3">
+      <span class="inline-block px-2.5 py-1 rounded-lg bg-[#1cb0f6] text-white font-extrabold text-xs">المَكْتَبَة المُوسِيقِيَّة • THE ARABIC SOUNDTRACK</span>
+      <div class="flex items-center gap-3"><div class="min-w-0 flex-1"><h2 class="text-2xl sm:text-3xl font-extrabold">מוזיקה בערבית 🎧</h2><p class="mt-2 text-sm font-bold text-[#4b4b4b] leading-relaxed">פלייליסט של הקהילה: שירים קלאסיים, פופ, ראפ, מוזיקה עממית ומה שביניהם. מוסיפים קישור, מאזינים יחד, ומגלים ערבית דרך הצליל.</p></div>${getGazelleMascotHTML('w-16 h-20 shrink-0', true)}</div>
+      <div class="flex flex-wrap gap-2 text-xs font-extrabold"><span class="px-3 py-1.5 rounded-xl bg-white border border-[#bfe8fd]">🎙️ ${allPosts.length} שיתופים</span><span class="px-3 py-1.5 rounded-xl bg-white border border-[#e5e5e5]">🌍 ניבים וסגנונות</span><span class="px-3 py-1.5 rounded-xl bg-white border border-[#e5e5e5]">📚 לומדים מילה חדשה</span></div>
+      <p class="text-xs font-bold text-[#777777]">הערה: משתפים קישורים רשמיים ליצירות; הנגן מגיע מ-YouTube / Spotify / SoundCloud ולא מועלה קובץ מוזיקה לאתר.</p>
+    </div>
+    <div class="flex flex-wrap items-center gap-2"><button type="button" onclick="musicToggleCompose()" class="duo-btn-green px-5 py-3 rounded-xl font-extrabold text-sm">➕ שיתוף שיר</button><span class="text-xs font-bold text-[#777777]">כל שיר חדש מוסיף צבע לפלייליסט המשותף</span></div>
+    ${compose}
+    <div class="flex flex-wrap gap-2">${chips}</div>
+    <div class="grid grid-cols-1 gap-3">${cards}</div>
+    ${empty}
+    <div class="p-4 rounded-2xl bg-[#f7f7f7] border-2 border-[#e5e5e5] text-xs font-bold text-[#777777] leading-relaxed">💡 אתגר קטן: בפעם הבאה שמאזינים לשיר, בחרו מילה בערבית שלא הכרתם והוסיפו אותה לשיתוף. ככה המדור הופך גם לאוצר מילים חי.</div>
+  </div>`;
+}
+
 function forumAgo(ts) {
   const m = Math.max(0, Math.round((Date.now() - ts) / 60000));
   if (m < 1) return 'ממש עכשיו';
@@ -4451,6 +4697,8 @@ function renderForumTab() {
         mainContentHtml = renderStoriesTab();
       } else if (state.activeNav === 'forum') {
         mainContentHtml = renderForumTab();
+      } else if (state.activeNav === 'music') {
+        mainContentHtml = renderMusicTab();
       }
 
       // Modals HTML (Guidebook & Victory Modal)
@@ -4515,10 +4763,10 @@ function renderForumTab() {
       }
 
       appEl.innerHTML = `
-        <div class="max-w-[1280px] mx-auto flex min-h-screen">
+        <div class="max-w-[1280px] mx-auto flex min-h-screen dawalingo-shell">
           
           <!-- RIGHT SIDEBAR -->
-          <aside class="w-[88px] xl:w-[256px] border-l-2 border-[#e5e5e5] px-4 py-6 flex flex-col justify-between sticky top-0 h-screen bg-white z-20 shrink-0">
+          <aside id="primary-sidebar" class="w-[88px] xl:w-[256px] border-l-2 border-[#e5e5e5] px-4 py-6 flex flex-col justify-between sticky top-0 h-screen bg-white z-20 shrink-0">
             <div>
               <div class="px-2 mb-7 flex items-center gap-3">
                 <div class="w-12 h-12 rounded-2xl bg-[#fff5d3] border-2 border-[#ffc800] flex items-center justify-center shrink-0 overflow-hidden shadow-sm">
@@ -4532,17 +4780,19 @@ function renderForumTab() {
 
               <nav class="space-y-2">
                 ${[
-                  { id: 'learn', label: 'מסלול למידה (مَسَار التَّعَلُّم)', icon: '🏠' },
-                  { id: 'grammar', label: 'דקדוק (قَوَاعِد)', icon: '📘' },
-                  { id: 'stories', label: 'סיפורים (قِصَص) BETA', icon: '📖' },
-                  { id: 'dictionary', label: 'מילון (قَامُوس)', icon: '🔍' },
-                  { id: 'forum', label: 'קהילה (مُجْتَمَع)', icon: '💬' }
+                  { id: 'learn', label: 'מסלול למידה (مَسَار التَّعَلُّم)', mobileLabel: 'למידה', icon: '🏠' },
+                  { id: 'grammar', label: 'דקדוק (قَوَاعِد)', mobileLabel: 'דקדוק', icon: '📘' },
+                  { id: 'stories', label: 'סיפורים (قِصَص) BETA', mobileLabel: 'סיפורים', icon: '📖' },
+                  { id: 'dictionary', label: 'מילון (قَامُوس)', mobileLabel: 'מילון', icon: '🔍' },
+                  { id: 'forum', label: 'קהילה (مُجْتَمَع)', mobileLabel: 'קהילה', icon: '💬' },
+                  { id: 'music', label: 'מוזיקה בערבית (مُوسِيقَى عَرَبِيَّة)', mobileLabel: 'מוזיקה', icon: '🎧' }
                 ].map(function(item) {
                   const isActive = state.activeNav === item.id;
                   return `
-                    <button onclick="setNav('${item.id}')" class="w-full flex items-center gap-4 px-4 py-3 rounded-2xl font-extrabold text-[15px] transition-all ${isActive ? 'bg-[#ddf4ff] text-[#1cb0f6] border-2 border-[#84d8ff]' : 'text-[#777777] hover:bg-[#f7f7f7] border-2 border-transparent'}">
+                    <button aria-label="${item.mobileLabel}" onclick="setNav('${item.id}')" class="w-full flex items-center gap-4 px-4 py-3 rounded-2xl font-extrabold text-[15px] transition-all ${isActive ? 'bg-[#ddf4ff] text-[#1cb0f6] border-2 border-[#84d8ff]' : 'text-[#777777] hover:bg-[#f7f7f7] border-2 border-transparent'}">
                       <span class="text-xl">${item.icon}</span>
                       <span class="hidden xl:inline tracking-wide">${item.label}</span>
+                      <span class="mobile-nav-label">${item.mobileLabel}</span>
                     </button>
                   `;
                 }).join('')}
@@ -4559,10 +4809,10 @@ function renderForumTab() {
           </aside>
 
           <!-- CENTER MAIN COLUMN -->
-          <main class="flex-1 max-w-[700px] mx-auto px-4 sm:px-6 py-6">
+          <main class="flex-1 max-w-[700px] mx-auto px-4 sm:px-6 py-6 dawalingo-main">
             
             <!-- HERO BANNER WITH GAZELLE MASCOT ONLY -->
-            <div class="mb-6 px-6 py-4 rounded-3xl border-2 border-[#e5e5e5] bg-gradient-to-l from-[#f7f7f7] via-white to-[#d7ffb8]/25 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm">
+            <div class="mb-6 px-6 py-4 rounded-3xl border-2 border-[#e5e5e5] bg-gradient-to-l from-[#f7f7f7] via-white to-[#d7ffb8]/25 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm dawalingo-hero">
               <div class="space-y-1.5 text-center sm:text-right">
                 <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#58cc02]/15 text-[#58a700] font-extrabold text-xs">
                   <span>أَهْلًا وَسَهْلًا فِي دَعْوَة-لِينْغُو</span>
