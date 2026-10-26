@@ -3,6 +3,7 @@
 <head>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>דעוה-לינגו - לימוד ערבית ספרותית</title>
@@ -3516,7 +3517,7 @@
     };
 
     // ============================================================================
-    // Q&A FORUM (thread style). Stored in this browser only: the site is a single file with no server.
+    // Q&A FORUM (thread style). Shared through Firebase Firestore in real time.
     // ============================================================================
 // ============================================================================
 // חיבור ל-FIREBASE FIRESTORE בזמן אמת
@@ -3532,6 +3533,7 @@ const firebaseConfig = {
 
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
+const storage = firebase.storage();
 
 const forum = {
   data: { posts: [], voted: {} },
@@ -3619,11 +3621,12 @@ function forumName() {
 
 
 // ============================================================================
-// MUSIC ROOM — share supported streaming links, never upload copyrighted audio
+// MUSIC ROOM — community-wide, real-time sharing of official music links
 // ============================================================================
 const musicRoom = { posts: [], composing: false, filter: 'הכל', loaded: false, error: '', saving: false };
 
-db.collection('music_posts').orderBy('ts', 'desc').limit(80).onSnapshot(function(snapshot) {
+// Match the community pattern: posts are read from Firestore in real time by every visitor.
+db.collection('music_posts').orderBy('ts', 'desc').onSnapshot(function(snapshot) {
   musicRoom.posts = [];
   snapshot.forEach(function(doc) { musicRoom.posts.push(Object.assign({ id: doc.id }, doc.data())); });
   musicRoom.loaded = true;
@@ -3631,7 +3634,7 @@ db.collection('music_posts').orderBy('ts', 'desc').limit(80).onSnapshot(function
   if (state.activeNav === 'music' && !musicRoom.composing && !musicRoom.saving) renderApp();
 }, function(err) {
   musicRoom.loaded = true;
-  musicRoom.error = 'לא ניתן לטעון את מדור המוזיקה ממסד הנתונים. ייתכן שצריך לאפשר קריאה לאוסף music_posts בכללי Firebase.';
+  musicRoom.error = 'לא ניתן לטעון את מדור המוזיקה ממסד הנתונים. יש לוודא שכללי Firestore של music_posts מאפשרים קריאה, כמו מדור הקהילה.';
   if (state.activeNav === 'music' && !musicRoom.composing) renderApp();
 });
 
@@ -3648,8 +3651,8 @@ function musicParseUrl(raw) {
         const m = u.pathname.match(/^\/(?:embed|shorts|live)\/([A-Za-z0-9_-]{6,})/);
         if (m) id = m[1];
       }
-      if (id && /^[A-Za-z0-9_-]{6,}$/.test(id)) return { platform: 'YouTube', url: u.href, embedUrl: 'https://www.youtube-nocookie.com/embed/' + id, embedType: 'youtube' };
-      return { platform: 'YouTube', url: u.href, embedUrl: '', embedType: 'link' };
+      if (id && /^[A-Za-z0-9_-]{6,}$/.test(id)) return { platform: host === 'music.youtube.com' ? 'YouTube Music' : 'YouTube', url: u.href, embedUrl: 'https://www.youtube-nocookie.com/embed/' + id, embedType: 'youtube' };
+      return { platform: host === 'music.youtube.com' ? 'YouTube Music' : 'YouTube', url: u.href, embedUrl: '', embedType: 'link' };
     }
     if (host === 'open.spotify.com') {
       const m = u.pathname.match(/^\/(track|album|playlist|artist|episode|show)\/([A-Za-z0-9]+)\/?$/);
@@ -3660,9 +3663,106 @@ function musicParseUrl(raw) {
       const clean = u.href.split('#')[0];
       return { platform: 'SoundCloud', url: clean, embedUrl: 'https://w.soundcloud.com/player/?url=' + encodeURIComponent(clean) + '&color=%231cb0f6&auto_play=false&hide_related=true&show_comments=false&show_user=true&show_reposts=false&visual=true', embedType: 'soundcloud' };
     }
-    if (host === 'music.apple.com' || host === 'music.youtube.com') return { platform: host === 'music.apple.com' ? 'Apple Music' : 'YouTube Music', url: u.href, embedUrl: '', embedType: 'link' };
+    if (host === 'music.apple.com') return { platform: 'Apple Music', url: u.href, embedUrl: '', embedType: 'link' };
     return { platform: 'קישור חיצוני', url: u.href, embedUrl: '', embedType: 'link' };
   } catch (e) { return null; }
+}
+
+// Ask the streaming provider for its public oEmbed title/creator when available.
+// If a provider blocks metadata access, sharing still works without manually entering a title or artist.
+async function musicFetchMetadata(parsed) {
+  const encoded = encodeURIComponent(parsed.url);
+  const endpoints = [];
+  if (parsed.platform === 'YouTube' || parsed.platform === 'YouTube Music') endpoints.push('https://www.youtube.com/oembed?url=' + encoded + '&format=json');
+  if (parsed.platform === 'Spotify') endpoints.push('https://open.spotify.com/oembed?url=' + encoded);
+  if (parsed.platform === 'SoundCloud') endpoints.push('https://soundcloud.com/oembed?format=json&url=' + encoded);
+  endpoints.push('https://noembed.com/embed?url=' + encoded);
+  for (const endpoint of endpoints) {
+    let timeout = null;
+    try {
+      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      timeout = controller ? setTimeout(function() { controller.abort(); }, 3500) : null;
+      const response = await fetch(endpoint, { method: 'GET', mode: 'cors', credentials: 'omit', signal: controller ? controller.signal : undefined });
+      if (!response.ok) continue;
+      const data = await response.json();
+      if (data && (data.title || data.author_name)) {
+        return {
+          title: String(data.title || '').trim().slice(0, 160),
+          artist: String(data.author_name || data.author || '').trim().slice(0, 120)
+        };
+      }
+    } catch (e) { /* metadata is optional; continue to the next public endpoint */ }
+    finally { if (timeout) clearTimeout(timeout); }
+  }
+  return { title: '', artist: '' };
+}
+
+// Use Apple's public search catalog as a second source for a primary genre when the provider metadata contains a title.
+async function musicFetchCatalogGenre(meta) {
+  if (!meta || !meta.title) return '';
+  const term = [meta.title, meta.artist].filter(Boolean).join(' ').trim();
+  if (!term) return '';
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timeout = controller ? setTimeout(function() { controller.abort(); }, 3500) : null;
+  try {
+    const response = await fetch('https://itunes.apple.com/search?entity=song&limit=8&term=' + encodeURIComponent(term), {
+      method: 'GET', mode: 'cors', credentials: 'omit', signal: controller ? controller.signal : undefined
+    });
+    if (!response.ok) return '';
+    const data = await response.json();
+    const normalize = function(value) {
+      return String(value || '').toLowerCase().normalize('NFKD')
+        .replace(/[\u064B-\u065F\u0670]/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+    };
+    const targetTitle = normalize(meta.title);
+    const targetArtist = normalize(meta.artist);
+    const targetTokens = targetTitle.split(/\s+/).filter(function(x) { return x.length > 1; });
+    const results = (data.results || []).map(function(item) {
+      const candidateTitle = normalize(item.trackName);
+      const candidateArtist = normalize(item.artistName);
+      const candidateTokens = new Set(candidateTitle.split(/\s+/).filter(function(x) { return x.length > 1; }));
+      const overlap = targetTokens.length ? targetTokens.filter(function(x) { return candidateTokens.has(x); }).length / targetTokens.length : 0;
+      const exact = !!targetTitle && (candidateTitle === targetTitle || candidateTitle.indexOf(targetTitle) !== -1 || targetTitle.indexOf(candidateTitle) !== -1);
+      const artistMatch = !targetArtist || candidateArtist === targetArtist || candidateArtist.indexOf(targetArtist) !== -1 || targetArtist.indexOf(candidateArtist) !== -1;
+      return { item: item, score: (exact ? 2 : overlap) + (artistMatch ? 0.5 : 0) };
+    }).sort(function(a, b) { return b.score - a.score; });
+    const best = results[0];
+    if (!best || best.score < 1.1 || !best.item.primaryGenreName) return '';
+    const raw = String(best.item.primaryGenreName).trim();
+    const normalized = raw.toLowerCase();
+    const known = {
+      'arabic music': 'موسيقى عربية / מוזיקה ערבית', 'world': 'מوسيقى عالمية / מוזיקה עולמית',
+      'world music': 'מوسيقى عالمية / מוזיקה עולמית', 'pop': 'פופ', 'hip-hop/rap': 'ראפ / היפ־הופ',
+      'hip-hop': 'ראפ / היפ־הופ', 'rap': 'ראפ / היפ־הופ', 'rock': 'רוק', 'alternative': 'אלטרנטיבי',
+      'classical': 'קלאסי', 'jazz': 'ג׳אז', 'blues': 'בלוז', 'electronic': 'מוזיקה אלקטרונית',
+      'dance': 'דאנס', 'soundtrack': 'פסקול', 'folk': 'מוזיקה עממית', 'traditional folk': 'מוזיקה עממית'
+    };
+    return known[normalized] || raw;
+  } catch (e) {
+    return '';
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
+// Best-effort automatic genre inference from public link metadata and optional community notes.
+// This does not claim to be a definitive music-classification model.
+function musicDetectGenre(text) {
+  const t = String(text || '').toLowerCase().normalize('NFKC');
+  const rules = [
+    { genre: 'ראפ / היפ־הופ', re: /\b(rap|hip[\s-]?hop|trap|drill)\b|راب|هيب.?هوب|دريل|تراب/ },
+    { genre: 'מוזיקה עממית / تراث', re: /\b(folk|shaabi|shabi|dabke|dabkeh|mawwal)\b|شعبي|شعبيّة|تراث|فلكلور|دبكة|موال|زجل|مهرجان/ },
+    { genre: 'طرب / קלאסי ערבי', re: /\b(tarab|fairuz|fayrouz|fayruz|umm kulthum|oum kalthoum|abdel halim|sabah fakhri)\b|طرب|فيروز|أم كلثوم|ام كلثوم|عبد الحليم|صباح فخري/ },
+    { genre: 'מוזיקת ראי / راي', re: /\b(rai|ra[iï])\b|راي/ },
+    { genre: 'פופ', re: /\b(pop|dance pop|arab pop)\b|بوب|بوب عربي/ },
+    { genre: 'רוק', re: /\b(rock|metal|punk|alternative rock)\b|روك|ميتال/ },
+    { genre: 'מוזיקה אלקטרונית', re: /\b(electronic|techno|house|edm|trance|electro)\b|إلكتروني|الكتروني/ },
+    { genre: 'ג׳אז', re: /\b(jazz|blues)\b|جاز|بلوز/ },
+    { genre: 'אנשיד / أناشيد', re: /\b(nasheed|nasheed)\b|أنشودة|أناشيد|انشودة|اناشيد/ },
+    { genre: 'מוזיקה רגועה / אינסטרומנטלית', re: /\b(ambient|chill|lo[ -]?fi|instrumental|acoustic|piano solo)\b|موسيقى هادئة|موسيقى تصويرية/ }
+  ];
+  for (const rule of rules) if (rule.re.test(t)) return rule.genre;
+  return 'סגנון לא זוהה אוטומטית';
 }
 
 window.musicToggleCompose = function() { musicRoom.composing = !musicRoom.composing; renderApp(); };
@@ -3671,29 +3771,29 @@ window.musicSubmit = async function(event) {
   if (event && event.preventDefault) event.preventDefault();
   if (musicRoom.saving) return;
   const getVal = function(id) { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
-  const title = getVal('music-title').slice(0, 120);
-  const artist = getVal('music-artist').slice(0, 120);
   const urlRaw = getVal('music-url');
   const note = getVal('music-note').slice(0, 500);
   const learnedWord = getVal('music-word').slice(0, 100);
   const name = (getVal('music-name') || forumName() || 'אורח/ת').slice(0, 60);
-  const vibe = getVal('music-vibe') || 'אחר';
   const parsed = musicParseUrl(urlRaw);
   const status = document.getElementById('music-status');
-  if (!title) { if (status) status.textContent = 'צריך להוסיף שם לשיר או ליצירה.'; return; }
-  if (!parsed) { if (status) status.textContent = 'הקישור לא תקין. הדביקו קישור שמתחיל ב-https://'; return; }
+  if (!parsed) { if (status) status.textContent = 'הקישור לא תקין. הדביקו קישור HTTPS לשיר או ליצירה.'; return; }
   musicRoom.saving = true;
   const submitButton = document.getElementById('music-submit-button');
-  if (submitButton) { submitButton.disabled = true; submitButton.textContent = 'מפרסמים…'; }
-  if (status) status.textContent = 'מפרסמים את ההמלצה לקהילה…';
+  if (submitButton) { submitButton.disabled = true; submitButton.textContent = 'מזהים ומשתפים…'; }
+  if (status) status.textContent = 'מנסים לזהות אוטומטית את שם היצירה, המבצע והסגנון מהקישור…';
   try {
+    const meta = await musicFetchMetadata(parsed);
+    const catalogGenre = await musicFetchCatalogGenre(meta);
+    const genre = catalogGenre || musicDetectGenre([meta.title, meta.artist, note, learnedWord].filter(Boolean).join(' '));
+    if (status) status.textContent = 'שומרים את השיתוף במדף המשותף…';
     await db.collection('music_posts').add({
-      title: title, artist: artist, url: parsed.url, platform: parsed.platform,
-      vibe: vibe, note: note, learnedWord: learnedWord, name: name, ts: Date.now()
+      title: meta.title || '', artist: meta.artist || '', url: parsed.url, platform: parsed.platform,
+      genre: genre, genreAuto: true, note: note, learnedWord: learnedWord, name: name, ts: Date.now()
     });
     try { localStorage.setItem('dawalingo_forum_name', name); } catch (e) {}
     musicRoom.composing = false;
-    showToast('השיר נוסף למדור המוזיקה! 🎧');
+    showToast('השיתוף נוסף למדור המוזיקה המשותף! 🎧');
     renderApp();
   } catch (err) {
     const msg = 'לא הצלחנו לפרסם לענן. בדקו את החיבור ואת כללי Firestore עבור music_posts.';
@@ -3722,31 +3822,26 @@ window.musicCopyLink = async function(id) {
 };
 
 function renderMusicTab() {
-  const filters = ['הכל', 'YouTube', 'Spotify', 'SoundCloud', 'Apple Music', 'קישור חיצוני'];
+  const filters = ['הכל', 'YouTube', 'YouTube Music', 'Spotify', 'SoundCloud', 'Apple Music', 'קישור חיצוני'];
   const allPosts = musicRoom.posts.filter(function(p) { return !!musicParseUrl(p.url); });
   const visiblePosts = allPosts.filter(function(p) {
     if (musicRoom.filter === 'הכל') return true;
     const parsed = musicParseUrl(p.url);
-    return parsed && (parsed.platform === musicRoom.filter || (musicRoom.filter === 'YouTube' && parsed.platform === 'YouTube Music'));
+    return parsed && parsed.platform === musicRoom.filter;
   });
   const chips = filters.map(function(f) {
     return `<button type="button" onclick="musicSetFilter('${f}')" class="px-3 py-2 rounded-xl text-xs font-extrabold ${musicRoom.filter === f ? 'duo-btn-selected' : 'duo-btn-outline'}">${f === 'הכל' ? '🎶 הכול' : escapeHtml(f)}</button>`;
   }).join('');
   const compose = musicRoom.composing ? `
     <form onsubmit="musicSubmit(event)" class="p-4 sm:p-5 rounded-2xl border-2 border-[#58cc02] bg-white space-y-3">
-      <h3 class="font-extrabold text-lg">מוסיפים שיר למדף 🎵</h3>
-      <p class="text-xs font-bold text-[#777777]">מדביקים קישור רשמי — האתר ייצור נגן כשאפשר, בלי להעתיק או לאחסן את קובץ המוזיקה עצמו.</p>
+      <h3 class="font-extrabold text-lg">מוסיפים מוזיקה למדף 🎵</h3>
+      <p class="text-xs font-bold text-[#777777]">מספיק קישור. האתר ינסה לזהות את שם היצירה והמבצע, ולנחש ז׳אנר לפי המידע הציבורי הזמין. אם שירות המוזיקה לא חושף מידע, השיתוף עדיין יתפרסם בלי שם ידני.</p>
+      <label class="block text-sm font-bold">קישור לשיר או ליצירה *<input id="music-url" type="url" dir="ltr" required maxlength="500" class="mt-1 w-full p-3 rounded-xl border-2 border-[#84d8ff] font-medium text-sm" placeholder="https://youtu.be/... או https://open.spotify.com/..." /></label>
       <div class="grid grid-cols-2 gap-3 music-form-grid">
-        <label class="block text-sm font-bold">שם השיר / היצירה *<input id="music-title" maxlength="120" required class="mt-1 w-full p-3 rounded-xl border-2 border-[#e5e5e5] font-bold" placeholder="למשל: فيروز — نسم علينا الهوى" /></label>
-        <label class="block text-sm font-bold">אמן / מבצע<input id="music-artist" maxlength="120" class="mt-1 w-full p-3 rounded-xl border-2 border-[#e5e5e5]" placeholder="פיירוז, אום כולתום…" /></label>
+        <label class="block text-sm font-bold">מילה בערבית שלמדתם מהשיר (לא חובה)<input id="music-word" maxlength="100" dir="auto" class="mt-1 w-full p-3 rounded-xl border-2 border-[#e5e5e5] font-arabic text-lg" placeholder="מילה חדשה + פירוש בעברית" /></label>
+        <label class="block text-sm font-bold">השם שיופיע בפרסום<input id="music-name" maxlength="60" value="${escapeHtml(forumName())}" class="mt-1 w-full p-3 rounded-xl border-2 border-[#e5e5e5]" placeholder="אפשר להשאיר ריק" /></label>
       </div>
-      <label class="block text-sm font-bold">קישור ל-YouTube, Spotify, SoundCloud או אתר מוזיקה אחר *<input id="music-url" type="url" dir="ltr" required maxlength="500" class="mt-1 w-full p-3 rounded-xl border-2 border-[#84d8ff] font-medium text-sm" placeholder="https://youtu.be/... או https://open.spotify.com/..." /></label>
-      <div class="grid grid-cols-2 gap-3 music-form-grid">
-        <label class="block text-sm font-bold">האווירה של השיר<select id="music-vibe" class="mt-1 w-full p-3 rounded-xl border-2 border-[#e5e5e5]"><option>קלאסי</option><option>פופ</option><option>היפ-הופ</option><option>עממי / تراث</option><option>רגוע</option><option>קצבי</option><option>אחר</option></select></label>
-        <label class="block text-sm font-bold">השם שיופיע בפרסום<input id="music-name" maxlength="60" value="${escapeHtml(forumName())}" class="mt-1 w-full p-3 rounded-xl border-2 border-[#e5e5e5]" placeholder="השם שלכם" /></label>
-      </div>
-      <label class="block text-sm font-bold">מילה בערבית שלמדתם מהשיר (לא חובה)<input id="music-word" maxlength="100" dir="auto" class="mt-1 w-full p-3 rounded-xl border-2 border-[#e5e5e5] font-arabic text-lg" placeholder="מילה חדשה + פירוש בעברית" /></label>
-      <label class="block text-sm font-bold">למה כדאי להאזין? (לא חובה)<textarea id="music-note" maxlength="500" rows="2" class="mt-1 w-full p-3 rounded-xl border-2 border-[#e5e5e5]" placeholder="המלצה קצרה, סגנון, ניב או סיפור מאחורי השיר…"></textarea></label>
+      <label class="block text-sm font-bold">הערה או המלצה (לא חובה)<textarea id="music-note" maxlength="500" rows="3" dir="auto" class="mt-1 w-full p-3 rounded-xl border-2 border-[#e5e5e5]" placeholder="מה אהבתם? מה כדאי לשים לב בערבית? אפשר לציין ניב או סגנון, אם זיהוי הז׳אנר לא הצליח…"></textarea></label>
       <p id="music-status" class="text-xs font-bold text-[#777777]" aria-live="polite"></p>
       <div class="flex flex-wrap gap-2"><button id="music-submit-button" type="submit" class="duo-btn-green flex-1 min-w-[150px] p-3 rounded-xl font-extrabold">שיתוף עם הקהילה</button><button type="button" onclick="musicToggleCompose()" class="duo-btn-outline px-5 py-3 rounded-xl font-extrabold">ביטול</button></div>
     </form>` : '';
@@ -3755,42 +3850,44 @@ function renderMusicTab() {
     if (!parsed) return '';
     let embed = '';
     if (parsed.embedType === 'youtube') {
-      embed = `<iframe class="music-embed" style="height:clamp(190px,52vw,315px)" src="${parsed.embedUrl}" title="${escapeHtml(p.title || 'YouTube music player')}" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>`;
+      embed = `<iframe class="music-embed" style="height:clamp(190px,52vw,315px)" src="${parsed.embedUrl}" title="${escapeHtml(p.title || 'נגן מוזיקה ב-YouTube')}" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>`;
     } else if (parsed.embedType === 'spotify') {
       const h = parsed.spotifyType === 'playlist' || parsed.spotifyType === 'album' || parsed.spotifyType === 'show' ? 300 : 152;
-      embed = `<iframe class="music-embed" style="height:${h}px" src="${parsed.embedUrl}" title="${escapeHtml(p.title || 'Spotify player')}" loading="lazy" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" allowfullscreen></iframe>`;
+      embed = `<iframe class="music-embed" style="height:${h}px" src="${parsed.embedUrl}" title="${escapeHtml(p.title || 'נגן Spotify')}" loading="lazy" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" allowfullscreen></iframe>`;
     } else if (parsed.embedType === 'soundcloud') {
-      embed = `<iframe class="music-embed" style="height:190px" src="${parsed.embedUrl}" title="${escapeHtml(p.title || 'SoundCloud player')}" loading="lazy" allow="autoplay" referrerpolicy="strict-origin-when-cross-origin"></iframe>`;
+      embed = `<iframe class="music-embed" style="height:190px" src="${parsed.embedUrl}" title="${escapeHtml(p.title || 'נגן SoundCloud')}" loading="lazy" allow="autoplay" referrerpolicy="strict-origin-when-cross-origin"></iframe>`;
     } else {
-      embed = `<a href="${escapeHtml(parsed.url)}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-3 p-4 rounded-xl bg-[#f7f7f7] border-2 border-dashed border-[#e5e5e5] text-[#1cb0f6] font-extrabold"><span class="text-2xl">🔗</span><span>פתיחת השיר ב-${escapeHtml(parsed.platform)} ↗<span class="block mt-1 text-xs font-bold text-[#777777]">ההטמעה אינה זמינה לפלטפורמה הזו — הקישור נשמר.</span></span></a>`;
+      embed = `<a href="${escapeHtml(parsed.url)}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-3 p-4 rounded-xl bg-[#f7f7f7] border-2 border-dashed border-[#e5e5e5] text-[#1cb0f6] font-extrabold"><span class="text-2xl">🔗</span><span>פתיחת השיר ב-${escapeHtml(parsed.platform)} ↗<span class="block mt-1 text-xs font-bold text-[#777777]">הקישור נשמר; נגן משולב אינו זמין לפלטפורמה הזו.</span></span></a>`;
     }
-    const vibe = p.vibe ? `<span class="px-2.5 py-1 rounded-lg bg-[#fff5d3] text-[#8c4103] text-[11px] font-extrabold">${escapeHtml(p.vibe)}</span>` : '';
+    const genre = p.genre || p.vibe || 'סגנון לא זוהה אוטומטית';
+    const vibeTag = `<span class="px-2.5 py-1 rounded-lg bg-[#fff5d3] text-[#8c4103] text-[11px] font-extrabold">🎼 ${escapeHtml(genre)}</span>`;
+    const metadataLine = [p.artist, parsed.platform].filter(Boolean).map(escapeHtml).join(' • ');
     return `<article class="music-card p-3 sm:p-4 rounded-2xl border-2 border-[#e5e5e5] bg-white space-y-3 shadow-sm">
-      <div class="music-meta flex flex-wrap items-center gap-2"><span class="w-10 h-10 rounded-xl bg-[#ddf4ff] flex items-center justify-center text-xl">${parsed.platform === 'Spotify' ? '🟢' : parsed.platform === 'YouTube' ? '▶️' : parsed.platform === 'SoundCloud' ? '🎧' : '🎵'}</span>
-        <div class="flex-1 min-w-0"><h3 class="font-extrabold text-base sm:text-lg leading-snug break-words">${escapeHtml(p.title || 'יצירה ללא שם')}</h3><p class="text-xs font-bold text-[#777777]">${escapeHtml(p.artist || 'אמן לא צוין')} • ${escapeHtml(parsed.platform)}</p></div>${vibe}</div>
+      <div class="music-meta flex flex-wrap items-center gap-2"><span class="w-10 h-10 rounded-xl bg-[#ddf4ff] flex items-center justify-center text-xl">${parsed.platform === 'Spotify' ? '🟢' : (parsed.platform === 'YouTube' || parsed.platform === 'YouTube Music') ? '▶️' : parsed.platform === 'SoundCloud' ? '🎧' : '🎵'}</span>
+        <div class="flex-1 min-w-0"><h3 class="font-extrabold text-base sm:text-lg leading-snug break-words">${escapeHtml(p.title || 'שיתוף מוזיקלי')}</h3><p class="text-xs font-bold text-[#777777]">${metadataLine || escapeHtml(parsed.platform)}</p></div>${vibeTag}</div>
       ${embed}
       ${p.learnedWord ? `<div class="p-3 rounded-xl bg-[#d7ffb8]/45 border border-[#b6e98f]"><span class="text-[11px] font-extrabold text-[#58a700]">מילה שלוקחים מהשיר</span><p class="font-arabic text-xl font-bold" dir="auto">${escapeHtml(p.learnedWord)}</p></div>` : ''}
-      ${p.note ? `<p class="text-sm font-medium leading-relaxed whitespace-pre-wrap">${escapeHtml(p.note)}</p>` : ''}
+      ${p.note ? `<p class="text-sm font-medium leading-relaxed whitespace-pre-wrap" dir="auto">${escapeHtml(p.note)}</p>` : ''}
       <div class="flex items-center justify-between gap-2 pt-1"><span class="text-[11px] font-bold text-[#999999]">שיתוף מאת ${escapeHtml(p.name || 'חבר/ת הקהילה')}</span><button type="button" onclick="musicCopyLink('${escapeHtml(p.id)}')" class="duo-btn-outline px-3 py-2 rounded-xl text-xs font-extrabold">🔗 העתקת קישור</button></div>
     </article>`;
   }).join('');
   const empty = musicRoom.error
-    ? `<div class="p-4 rounded-2xl bg-[#fff5d3] border-2 border-[#ffc800] text-sm font-bold text-[#8c4103]">${escapeHtml(musicRoom.error)}<p class="mt-2 font-medium">אפשר לבדוק ב-Firebase Console את כללי Firestore לאוסף <code>music_posts</code>.</p></div>`
+    ? `<div class="p-4 rounded-2xl bg-[#fff5d3] border-2 border-[#ffc800] text-sm font-bold text-[#8c4103]">${escapeHtml(musicRoom.error)}<p class="mt-2 font-medium">אפשר לבדוק ב-Firebase Console את כללי Firestore לאוסף <code>music_posts</code> ולהשוות לכללי <code>forum_posts</code>.</p></div>`
     : !musicRoom.loaded ? `<div class="p-5 text-center text-sm font-bold text-[#777777]">טוענים את מדף המוזיקה…</div>`
-    : !visiblePosts.length ? `<div class="p-6 rounded-2xl border-2 border-dashed border-[#e5e5e5] text-center space-y-2"><div class="text-4xl">🎼</div><h3 class="font-extrabold text-lg">המדף עוד מחכה לשיר הראשון</h3><p class="text-sm font-bold text-[#777777]">שתפו שיר בערבית שאתם אוהבים — אולי מישהו יגלה דרכו מילה חדשה או אמן שלא הכיר.</p></div>` : '';
+    : !visiblePosts.length ? `<div class="p-6 rounded-2xl border-2 border-dashed border-[#e5e5e5] text-center space-y-2"><div class="text-4xl">🎼</div><h3 class="font-extrabold text-lg">המדף עוד מחכה לשיתוף הראשון</h3><p class="text-sm font-bold text-[#777777]">מספיק להדביק קישור לשיר בערבית. לא צריך להקליד את שם השיר או האמן.</p></div>` : '';
   return `<div class="space-y-5 pb-24">
     <div class="p-5 sm:p-6 rounded-2xl bg-gradient-to-l from-[#ddf4ff] via-white to-[#f3e8ff] border-2 border-[#84d8ff] space-y-3">
       <span class="inline-block px-2.5 py-1 rounded-lg bg-[#1cb0f6] text-white font-extrabold text-xs">المَكْتَبَة المُوسِيقِيَّة • THE ARABIC SOUNDTRACK</span>
-      <div class="flex items-center gap-3"><div class="min-w-0 flex-1"><h2 class="text-2xl sm:text-3xl font-extrabold">מוזיקה בערבית 🎧</h2><p class="mt-2 text-sm font-bold text-[#4b4b4b] leading-relaxed">פלייליסט של הקהילה: שירים קלאסיים, פופ, ראפ, מוזיקה עממית ומה שביניהם. מוסיפים קישור, מאזינים יחד, ומגלים ערבית דרך הצליל.</p></div>${getGazelleMascotHTML('w-16 h-20 shrink-0', true)}</div>
-      <div class="flex flex-wrap gap-2 text-xs font-extrabold"><span class="px-3 py-1.5 rounded-xl bg-white border border-[#bfe8fd]">🎙️ ${allPosts.length} שיתופים</span><span class="px-3 py-1.5 rounded-xl bg-white border border-[#e5e5e5]">🌍 ניבים וסגנונות</span><span class="px-3 py-1.5 rounded-xl bg-white border border-[#e5e5e5]">📚 לומדים מילה חדשה</span></div>
-      <p class="text-xs font-bold text-[#777777]">הערה: משתפים קישורים רשמיים ליצירות; הנגן מגיע מ-YouTube / Spotify / SoundCloud ולא מועלה קובץ מוזיקה לאתר.</p>
+      <div class="flex items-center gap-3"><div class="min-w-0 flex-1"><h2 class="text-2xl sm:text-3xl font-extrabold">מוזיקה בערבית 🎧</h2><p class="mt-2 text-sm font-bold text-[#4b4b4b] leading-relaxed">מדף משותף שמתעדכן אצל כולם בזמן אמת: משתפים קישור, מוסיפים מילה בערבית ומגלים מוזיקה חדשה יחד.</p></div>${getGazelleMascotHTML('w-16 h-20 shrink-0', true)}</div>
+      <div class="flex flex-wrap gap-2 text-xs font-extrabold"><span class="px-3 py-1.5 rounded-xl bg-white border border-[#bfe8fd]">🎙️ ${allPosts.length} שיתופים</span><span class="px-3 py-1.5 rounded-xl bg-white border border-[#e5e5e5]">🌍 ניבים וסגנונות</span><span class="px-3 py-1.5 rounded-xl bg-white border border-[#e5e5e5]">📚 אוצר מילים</span></div>
+      <p class="text-xs font-bold text-[#777777]">הז׳אנר מזוהה אוטומטית לפי הכותרת והמידע הציבורי שהשירות מחזיר, כאשר זמין; זהו ניחוש ולא סיווג מוזיקלי ודאי. המשתפים קישורים רשמיים בלבד.</p>
     </div>
-    <div class="flex flex-wrap items-center gap-2"><button type="button" onclick="musicToggleCompose()" class="duo-btn-green px-5 py-3 rounded-xl font-extrabold text-sm">➕ שיתוף שיר</button><span class="text-xs font-bold text-[#777777]">כל שיר חדש מוסיף צבע לפלייליסט המשותף</span></div>
+    <div class="flex flex-wrap items-center gap-2"><button type="button" onclick="musicToggleCompose()" class="duo-btn-green px-5 py-3 rounded-xl font-extrabold text-sm">➕ שיתוף מוזיקה</button><span class="text-xs font-bold text-[#777777]">קישור אחד, וכל הקהילה יכולה לגלות אותו</span></div>
     ${compose}
     <div class="flex flex-wrap gap-2">${chips}</div>
     <div class="grid grid-cols-1 gap-3">${cards}</div>
     ${empty}
-    <div class="p-4 rounded-2xl bg-[#f7f7f7] border-2 border-[#e5e5e5] text-xs font-bold text-[#777777] leading-relaxed">💡 אתגר קטן: בפעם הבאה שמאזינים לשיר, בחרו מילה בערבית שלא הכרתם והוסיפו אותה לשיתוף. ככה המדור הופך גם לאוצר מילים חי.</div>
+    <div class="p-4 rounded-2xl bg-[#f7f7f7] border-2 border-[#e5e5e5] text-xs font-bold text-[#777777] leading-relaxed">💡 אתגר קטן: מוסיפים מילה ששמעתם בשיר ואת הפירוש שלה — וכך בונים יחד אוצר מילים חי.</div>
   </div>`;
 }
 
@@ -3809,33 +3906,98 @@ window.forumToggleCompose = function() { forum.composing = !forum.composing; ren
 window.forumOpen = function(id) { forum.open = id; renderApp(); window.scrollTo(0, 0); };
 window.forumBack = function() { forum.open = null; renderApp(); };
 
+// ==========================================================================
+// Public community attachments (images and study documents)
+// Files are shared publicly with the community, so show that clearly in the UI.
+// ========================================================================== 
+const FORUM_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;
+const FORUM_ATTACHMENT_TYPES = {
+  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', heic: 'image/heic', heif: 'image/heif',
+  pdf: 'application/pdf', txt: 'text/plain', csv: 'text/csv', doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  odt: 'application/vnd.oasis.opendocument.text', xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  ppt: 'application/vnd.ms-powerpoint', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+};
+function forumAttachmentType(file) {
+  const ext = (String(file && file.name || '').split('.').pop() || '').toLowerCase();
+  return FORUM_ATTACHMENT_TYPES[ext] || '';
+}
+function forumValidateAttachment(file) {
+  if (!file) return '';
+  if (file.size > FORUM_ATTACHMENT_MAX_BYTES) return 'הקובץ גדול מדי. אפשר לצרף קובץ עד 10MB.';
+  const expectedType = forumAttachmentType(file);
+  if (!expectedType) return 'סוג הקובץ אינו נתמך. אפשר לצרף תמונה, PDF או מסמך לימודי נפוץ.';
+  if (file.type && file.type !== 'application/octet-stream' && file.type !== expectedType && !(expectedType.startsWith('image/') && file.type.startsWith('image/'))) {
+    return 'סוג הקובץ לא תואם לסיומת שלו. נסו לשמור אותו בפורמט נתמך.';
+  }
+  return '';
+}
+function forumAttachmentStatus(id, message) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = message;
+}
+async function forumUploadAttachment(file, folder, statusId) {
+  if (!file) return null;
+  const error = forumValidateAttachment(file);
+  if (error) throw new Error(error);
+  if (!storage || !storage.ref) throw new Error('שירות העלאת הקבצים אינו זמין כרגע.');
+  const safeFolder = String(folder || 'questions').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const safeName = String(file.name || 'attachment').normalize('NFKC').replace(/[^\p{L}\p{N}._-]+/gu, '_').slice(-100) || 'attachment';
+  const contentType = forumAttachmentType(file) || file.type || 'application/octet-stream';
+  const ref = storage.ref().child('forum_attachments/' + safeFolder + '/' + Date.now() + '_' + Math.random().toString(36).slice(2, 9) + '_' + safeName);
+  const task = ref.put(file, { contentType: contentType, customMetadata: { originalName: String(file.name || 'attachment').slice(0, 150) } });
+  const uploadedRef = await new Promise(function(resolve, reject) {
+    task.on('state_changed', function(snapshot) {
+      const percent = snapshot.totalBytes ? Math.round(snapshot.bytesTransferred / snapshot.totalBytes * 100) : 0;
+      forumAttachmentStatus(statusId, 'מעלים את הקובץ… ' + percent + '%');
+    }, reject, function() { resolve(task.snapshot.ref); });
+  });
+  const url = await uploadedRef.getDownloadURL();
+  return { url: url, path: uploadedRef.fullPath, name: String(file.name || 'קובץ מצורף').slice(0, 150), contentType: contentType, size: file.size };
+}
+function forumAttachmentHTML(attachment) {
+  if (!attachment || !attachment.url || !/^https:\/\/firebasestorage\.googleapis\.com\//i.test(String(attachment.url))) return '';
+  const url = escapeHtml(attachment.url);
+  const name = escapeHtml(attachment.name || 'קובץ מצורף');
+  const isImage = /^image\/(jpeg|png|gif|webp|heic|heif)$/i.test(String(attachment.contentType || ''));
+  const size = attachment.size ? (attachment.size < 1024 * 1024 ? Math.max(1, Math.round(attachment.size / 1024)) + 'KB' : (attachment.size / (1024 * 1024)).toFixed(1) + 'MB') : '';
+  if (isImage) return `<div class="mt-3 rounded-xl border border-[#bfe8fd] bg-[#f4fbff] p-2"><a href="${url}" target="_blank" rel="noopener noreferrer"><img src="${url}" alt="${name}" loading="lazy" class="max-h-72 max-w-full rounded-lg object-contain mx-auto" /></a><p class="mt-1 text-[11px] font-bold text-[#777777] break-words">📎 ${name}${size ? ' • ' + size : ''}</p></div>`;
+  return `<div class="mt-3"><a href="${url}" target="_blank" rel="noopener noreferrer" class="inline-flex max-w-full items-center gap-2 rounded-xl border border-[#bfe8fd] bg-[#f4fbff] px-3 py-2 text-sm font-extrabold text-[#1689c2] break-all">📎 ${name}${size ? ' (' + size + ')' : ''} ↗</a></div>`;
+}
+
 window.forumSubmitPost = async function(ev) {
   ev.preventDefault();
   const name = document.getElementById('fq-name').value.trim();
   const topic = document.getElementById('fq-topic').value;
   const title = document.getElementById('fq-title').value.trim();
   const body = document.getElementById('fq-body').value.trim();
-
-  if (!name || !title || !body) {
-    showToast('צריך למלא שם, כותרת ותוכן השאלה.');
-    return;
-  }
-
+  const fileEl = document.getElementById('fq-attachment');
+  const file = fileEl && fileEl.files ? fileEl.files[0] : null;
+  const statusId = 'fq-status';
+  if (!name || !title || !body) { showToast('צריך למלא שם, כותרת ותוכן השאלה.'); return; }
+  const validationError = forumValidateAttachment(file);
+  if (validationError) { forumAttachmentStatus(statusId, validationError); return; }
+  const form = ev.target;
+  const submitButton = form.querySelector('button[type="submit"]');
+  if (submitButton) { submitButton.disabled = true; submitButton.textContent = 'מפרסמים…'; }
   try {
     localStorage.setItem('dawalingo_forum_name', name);
-    await db.collection("forum_posts").add({
-      name: name,
-      topic: topic,
-      title: title,
-      body: body,
-      ts: Date.now(),
-      votes: 0,
-      replies: []
+    let attachment = null;
+    if (file) attachment = await forumUploadAttachment(file, 'questions', statusId);
+    forumAttachmentStatus(statusId, 'מפרסמים את השאלה לקהילה…');
+    await db.collection('forum_posts').add({
+      name: name, topic: topic, title: title, body: body, attachment: attachment,
+      ts: Date.now(), votes: 0, replies: []
     });
     forum.composing = false;
     showToast('השאלה פורסמה בהצלחה לכולם!');
+    renderApp();
   } catch (err) {
-    showToast('שגיאה בשמירה: ' + err.message);
+    forumAttachmentStatus(statusId, 'לא הצלחנו לפרסם. ' + (err && err.message ? err.message : 'בדקו את חיבור האינטרנט והרשאות Firebase Storage/Firestore.'));
+    showToast('שגיאה בפרסום: ' + (err && err.message ? err.message : 'בדקו את חיבור האינטרנט והרשאות Firebase.'));
+  } finally {
+    if (submitButton && forum.composing) { submitButton.disabled = false; submitButton.textContent = 'פרסום שאלה'; }
   }
 };
 
@@ -3843,31 +4005,32 @@ window.forumSubmitReply = async function(ev, postId) {
   ev.preventDefault();
   const name = document.getElementById('fr-name').value.trim();
   const text = document.getElementById('fr-text').value.trim();
-
-  if (!name || !text) {
-    showToast('צריך למלא שם ותשובה.');
-    return;
-  }
-
+  const fileEl = document.getElementById('fr-attachment');
+  const file = fileEl && fileEl.files ? fileEl.files[0] : null;
+  const statusId = 'fr-status';
+  if (!name || !text) { showToast('צריך למלא שם ותשובה.'); return; }
+  const validationError = forumValidateAttachment(file);
+  if (validationError) { forumAttachmentStatus(statusId, validationError); return; }
+  const form = ev.target;
+  const submitButton = form.querySelector('button[type="submit"]');
+  if (submitButton) { submitButton.disabled = true; submitButton.textContent = 'שולחים…'; }
   try {
     localStorage.setItem('dawalingo_forum_name', name);
-    const postRef = db.collection("forum_posts").doc(postId);
+    let attachment = null;
+    if (file) attachment = await forumUploadAttachment(file, 'replies_' + postId, statusId);
+    const postRef = db.collection('forum_posts').doc(postId);
     const doc = await postRef.get();
-    if (doc.exists) {
-      const currentReplies = doc.data().replies || [];
-      currentReplies.push({
-        id: 'r' + Date.now(),
-        name: name,
-        text: text,
-        ts: Date.now(),
-        votes: 0
-      });
-      await postRef.update({ replies: currentReplies });
-      showToast('התשובה נוספה בהצלחה!');
-      renderApp();
-    }
+    if (!doc.exists) throw new Error('השאלה כבר אינה קיימת.');
+    const currentReplies = doc.data().replies || [];
+    currentReplies.push({ id: 'r' + Date.now(), name: name, text: text, attachment: attachment, ts: Date.now(), votes: 0 });
+    await postRef.update({ replies: currentReplies });
+    showToast('התשובה נוספה בהצלחה!');
+    renderApp();
   } catch (err) {
-    showToast('שגיאה בשליחה: ' + err.message);
+    forumAttachmentStatus(statusId, 'לא הצלחנו לשלוח. ' + (err && err.message ? err.message : 'בדקו את חיבור האינטרנט והרשאות Firebase.'));
+    showToast('שגיאה בשליחה: ' + (err && err.message ? err.message : 'בדקו את חיבור האינטרנט והרשאות Firebase.'));
+  } finally {
+    if (submitButton) { submitButton.disabled = false; submitButton.textContent = 'פרסום תשובה'; }
   }
 };
 
@@ -3942,21 +4105,23 @@ function renderForumTab() {
     if (!post) { forum.open = null; return renderForumTab(); }
     const replies = (post.replies || []).slice().sort(function(a, b) { return (b.votes || 0) - (a.votes || 0) || a.ts - b.ts; });
     const repliesHtml = replies.length ? replies.map(function(r) {
-      return `<div class="flex gap-3 p-4 rounded-2xl border-2 border-[#e5e5e5] bg-white">${voteBox(r.votes, `forumVote('${post.id}','${r.id}')`, d.voted && d.voted[post.id + ':' + r.id])}<div class="flex-1 min-w-0"><div class="text-xs font-extrabold text-[#777777]">${escapeHtml(r.name)} • ${forumAgo(r.ts)}</div><p class="mt-1 text-sm font-bold text-[#3c3c3c] whitespace-pre-wrap leading-relaxed" dir="auto">${escapeHtml(r.text)}</p></div></div>`;
+      return `<div class="flex gap-3 p-4 rounded-2xl border-2 border-[#e5e5e5] bg-white">${voteBox(r.votes, `forumVote('${post.id}','${r.id}')`, d.voted && d.voted[post.id + ':' + r.id])}<div class="flex-1 min-w-0"><div class="text-xs font-extrabold text-[#777777]">${escapeHtml(r.name)} • ${forumAgo(r.ts)}</div><p class="mt-1 text-sm font-bold text-[#3c3c3c] whitespace-pre-wrap leading-relaxed" dir="auto">${escapeHtml(r.text)}</p>${forumAttachmentHTML(r.attachment)}</div></div>`;
     }).join('') : `<p class="text-sm font-bold text-[#afafaf] text-center py-4">עדיין אין תשובות. אפשר להיות הראשונים!</p>`;
     return `<div class="space-y-4 pb-24">${header}
       <button onclick="forumBack()" class="text-sm font-extrabold text-[#1cb0f6] hover:underline">→ חזרה לכל השאלות</button>
       <div class="flex gap-3 p-5 rounded-2xl border-2 border-[#84d8ff] bg-white">${voteBox(post.votes, `forumVote('${post.id}')`, d.voted && d.voted[post.id])}
         <div class="flex-1 min-w-0"><div class="flex flex-wrap items-center gap-2 text-xs font-extrabold text-[#777777]"><span class="px-2 py-0.5 rounded-lg bg-[#f3e8ff] text-[#6f4ea1]">${escapeHtml(post.topic)}</span><span>${escapeHtml(post.name)}</span><span>•</span><span>${forumAgo(post.ts)}</span></div>
         <h3 class="text-xl font-extrabold text-[#3c3c3c] mt-1" dir="auto">${escapeHtml(post.title)}</h3>
-        <p class="mt-2 text-sm font-bold text-[#4b4b4b] whitespace-pre-wrap leading-relaxed" dir="auto">${escapeHtml(post.body)}</p></div></div>
+        <p class="mt-2 text-sm font-bold text-[#4b4b4b] whitespace-pre-wrap leading-relaxed" dir="auto">${escapeHtml(post.body)}</p>${forumAttachmentHTML(post.attachment)}</div></div>
       <h4 class="font-extrabold text-[#3c3c3c]">${(post.replies || []).length} תשובות</h4>
       <div class="space-y-3">${repliesHtml}</div>
       <form onsubmit="forumSubmitReply(event, '${post.id}')" class="p-5 bg-white rounded-2xl border-2 border-[#e5e5e5] space-y-3">
         <h4 class="font-extrabold text-sm">הוספת תשובה</h4>
         <input id="fr-name" required value="${escapeHtml(forumName())}" placeholder="השם שלכם" class="w-full p-3 border-2 border-[#e5e5e5] rounded-xl font-bold" />
         <textarea id="fr-text" required rows="4" dir="auto" placeholder="כתבו את התשובה כאן..." class="w-full p-3 border-2 border-[#e5e5e5] rounded-xl font-bold"></textarea>
-        <button class="duo-btn-green w-full p-3 rounded-xl font-extrabold">פרסום תשובה</button></form></div>`;
+        <label class="block text-sm font-bold">צירוף תמונה או קובץ (לא חובה, עד 10MB)<input id="fr-attachment" type="file" accept="image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif,application/pdf,text/plain,text/csv,.doc,.docx,.odt,.xls,.xlsx,.ppt,.pptx" class="mt-1 w-full p-2 rounded-xl border-2 border-[#e5e5e5] text-sm" /></label>
+        <p id="fr-status" class="text-xs font-bold text-[#777777]" aria-live="polite">הקובץ המצורף יהיה זמין לכל המשתמשים במדור הקהילה.</p>
+        <button type="submit" class="duo-btn-green w-full p-3 rounded-xl font-extrabold">פרסום תשובה</button></form></div>`;
   }
 
   let posts = d.posts.filter(function(x) { return forum.topic === 'הכל' || x.topic === forum.topic; });
@@ -3966,7 +4131,7 @@ function renderForumTab() {
     return `<div class="flex gap-3 p-4 rounded-2xl border-2 border-[#e5e5e5] bg-white hover:bg-[#f7f7f7]">${voteBox(x.votes, `forumVote('${x.id}')`, d.voted && d.voted[x.id])}
       <button onclick="forumOpen('${x.id}')" class="flex-1 min-w-0 text-right"><div class="flex flex-wrap items-center gap-2 text-[11px] font-extrabold text-[#777777]"><span class="px-2 py-0.5 rounded-lg bg-[#f3e8ff] text-[#6f4ea1]">${escapeHtml(x.topic)}</span><span>${escapeHtml(x.name)}</span><span>•</span><span>${forumAgo(x.ts)}</span></div>
       <div class="font-extrabold text-[#3c3c3c] mt-1" dir="auto">${escapeHtml(x.title)}</div>
-      <div class="text-xs font-bold text-[#1cb0f6] mt-1">💬 ${(x.replies || []).length} תשובות</div></button></div>`;
+      <div class="text-xs font-bold text-[#1cb0f6] mt-1">💬 ${(x.replies || []).length} תשובות${x.attachment ? ' • 📎 קובץ מצורף' : ''}</div></button></div>`;
   }).join('') : `<p class="text-center text-sm font-bold text-[#afafaf] py-8">אין עדיין שאלות בנושא הזה.</p>`;
   const topicOpts = topics.map(function(t) { return `<option>${escapeHtml(t)}</option>`; }).join('');
   const compose = forum.composing ? `<form onsubmit="forumSubmitPost(event)" class="p-5 bg-white rounded-2xl border-2 border-[#58cc02] space-y-3">
@@ -3976,7 +4141,9 @@ function renderForumTab() {
       <select id="fq-topic" class="w-full p-3 border-2 border-[#e5e5e5] rounded-xl font-bold">${topicOpts}</select>
       <input id="fq-title" required dir="auto" placeholder="כותרת השאלה" class="w-full p-3 border-2 border-[#e5e5e5] rounded-xl font-bold" />
       <textarea id="fq-body" required rows="5" dir="auto" placeholder="פרטי השאלה: מה ניסיתם, מה לא ברור?" class="w-full p-3 border-2 border-[#e5e5e5] rounded-xl font-bold"></textarea>
-      <div class="flex gap-3"><button class="duo-btn-green flex-1 p-3 rounded-xl font-extrabold">פרסום שאלה</button><button type="button" onclick="forumToggleCompose()" class="duo-btn-outline px-5 rounded-xl font-extrabold text-sm">ביטול</button></div></form>` : '';
+      <label class="block text-sm font-bold">צירוף צילום או קובץ (לא חובה, עד 10MB)<input id="fq-attachment" type="file" accept="image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif,application/pdf,text/plain,text/csv,.doc,.docx,.odt,.xls,.xlsx,.ppt,.pptx" class="mt-1 w-full p-2 rounded-xl border-2 border-[#e5e5e5] text-sm" /></label>
+      <p id="fq-status" class="text-xs font-bold text-[#777777]" aria-live="polite">התמונה או הקובץ יהיו משותפים לכל המשתמשים במדור הקהילה.</p>
+      <div class="flex gap-3"><button type="submit" class="duo-btn-green flex-1 p-3 rounded-xl font-extrabold">פרסום שאלה</button><button type="button" onclick="forumToggleCompose()" class="duo-btn-outline px-5 rounded-xl font-extrabold text-sm">ביטול</button></div></form>` : '';
 
   return `<div class="space-y-4 pb-24">${header}
     <div class="flex flex-wrap items-center gap-2"><button onclick="forumToggleCompose()" class="duo-btn-green px-5 py-2.5 rounded-xl font-extrabold text-sm">✍️ שאלה חדשה</button>
