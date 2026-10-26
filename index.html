@@ -91,7 +91,7 @@
     .kb-toggle-btn:active { transform: translateY(4px); box-shadow: 0 0 0 #5cc6f7; }
     .kb-toggle-btn.kb-on { background: linear-gradient(180deg, #52c7fb 0%, #1cb0f6 100%); border-color: #0e9be0; box-shadow: 0 4px 0 #0f8fd0; color: #ffffff; }
     .kb-toggle-btn.kb-on:active { box-shadow: 0 0 0 #0f8fd0; }
-    .kb-panel { background: linear-gradient(180deg, #f4fbff 0%, #def3ff 100%); border-top: 3px solid #84d8ff; border-radius: 24px 24px 0 0; box-shadow: 0 -12px 34px rgba(28, 176, 246, .22); }
+    .kb-panel { background: linear-gradient(180deg, #f4fbff 0%, #def3ff 100%); border: 2px solid #84d8ff; border-radius: 18px; box-shadow: 0 8px 24px rgba(28, 176, 246, .30); }
     .kb-key { background: #ffffff; border: 2px solid #bfe8fd; box-shadow: 0 3px 0 #9fd8f6; color: #17689a; transition: transform .08s, box-shadow .08s, background .12s; }
     .kb-key:hover { background: #e8f7ff; }
     .kb-key:active { transform: translateY(3px); box-shadow: 0 0 0 #9fd8f6; background: #d4f0ff; }
@@ -2551,7 +2551,9 @@
       verbQuery: '',
       dictSearch: '',
       dictLimit: 60,
-      dictMode: 'topic',
+      dictMode: 'alpha',
+      alphaLang: 'ar',
+      alphaLetter: 'הכל',
       selectedPos: 'הכל',
       selectedVocabCategory: 'הכל',
       wikiQuery: '',
@@ -3113,6 +3115,49 @@
       el.innerHTML = html;
     }
 
+    // ---------- alphabetical browsing (Arabic or Hebrew alphabet) ----------
+    const ARABIC_LETTERS = ['ا','ب','ت','ث','ج','ح','خ','د','ذ','ر','ز','س','ش','ص','ض','ط','ظ','ع','غ','ف','ق','ك','ل','م','ن','ه','و','ي'];
+    const HEBREW_LETTERS = 'אבגדהוזחטיכלמנסעפצקרשת'.split('');
+    const AR_IDX = {}; ARABIC_LETTERS.forEach(function(c, i) { AR_IDX[c] = i + 1; });
+    const HE_FINAL = { 'ך': 'כ', 'ם': 'מ', 'ן': 'נ', 'ף': 'פ', 'ץ': 'צ' };
+    // sort key: no vowel marks, hamza forms under alef, no leading ال, so that "الكِتَاب" sits under ك
+    function arKey(ar) {
+      let k = stripTashkeel(String(ar || '')).replace(/ـ/g, '').replace(/[أإآٱ]/g, 'ا').replace(/ى/g, 'ي').replace(/[ؤئء]/g, 'ا').replace(/ة/g, 'ه').trim();
+      if (/^ال.{2,}/.test(k)) k = k.slice(2);
+      return k;
+    }
+    function heKey(he) {
+      return String(he || '').replace(/\(.*?\)/g, '').replace(/[^\u05D0-\u05EA ]/g, '').trim().replace(/[ךםןףץ]/g, function(c) { return HE_FINAL[c]; });
+    }
+    function dictLetterOf(item) {
+      const k = state.alphaLang === 'he' ? heKey(item.he) : arKey(item.ar);
+      const c = k.charAt(0);
+      return (state.alphaLang === 'he' ? HEBREW_LETTERS : ARABIC_LETTERS).indexOf(c) >= 0 ? c : '#';
+    }
+    function dictCompare(a, b) {
+      if (state.alphaLang === 'he') return heKey(a.he).localeCompare(heKey(b.he), 'he');
+      const x = arKey(a.ar), y = arKey(b.ar), n = Math.min(x.length, y.length);
+      for (let i = 0; i < n; i++) { const p = AR_IDX[x[i]] || 99, q = AR_IDX[y[i]] || 99; if (p !== q) return p - q; }
+      return x.length - y.length;
+    }
+    function dictNavActive() {
+      if (state.dictMode === 'alpha') return state.alphaLetter !== 'הכל';
+      return state.dictMode === 'pos' ? state.selectedPos !== 'הכל' : state.selectedVocabCategory !== 'הכל';
+    }
+    function alphaNavHtml(allItems) {
+      const lang = state.alphaLang;
+      const letters = lang === 'ar' ? ARABIC_LETTERS : HEBREW_LETTERS;
+      const counts = {}; allItems.forEach(function(i) { const l = dictLetterOf(i); counts[l] = (counts[l] || 0) + 1; });
+      const langBtn = function(v, label) { return `<button onclick="setAlphaLang('${v}')" class="px-3 py-1.5 rounded-xl text-xs font-extrabold ${lang === v ? 'duo-btn-selected' : 'duo-btn-outline'}">${label}</button>`; };
+      const chips = ['הכל'].concat(letters).map(function(l) {
+        const n = l === 'הכל' ? allItems.length : (counts[l] || 0); const active = state.alphaLetter === l; const dis = n === 0;
+        return `<button ${dis ? 'disabled' : ''} onclick="setAlphaLetter('${l}')" class="px-2.5 py-1.5 rounded-xl ${lang === 'ar' && l !== 'הכל' ? 'font-arabic text-base' : 'text-xs'} font-extrabold ${active ? 'duo-btn-selected' : (dis ? 'bg-[#f7f7f7] text-[#d0d0d0] border-2 border-[#eeeeee] cursor-not-allowed' : 'duo-btn-outline')}">${l} <span class="opacity-60 text-[10px]">${n}</span></button>`;
+      }).join('');
+      return `<div class="w-full flex flex-wrap items-center gap-1.5 mb-1"><span class="text-[11px] font-extrabold text-[#777777]">סדר לפי:</span>${langBtn('ar', 'אלף-בית ערבי')}${langBtn('he', 'אלף-בית עברי')}</div>` + chips;
+    }
+    window.setAlphaLang = function(l) { state.alphaLang = l; state.alphaLetter = 'הכל'; state.dictLimit = 60; renderApp(); };
+    window.setAlphaLetter = function(l) { state.alphaLetter = l; state.dictLimit = 60; renderApp(); };
+
     function dictItemMatches(item, q, sq) {
       if (!q) return true;
       if (item.isVerb) return stripTashkeel(item.ar).indexOf(sq) !== -1 || item.root.replace(/\./g, '').indexOf(sq) !== -1 || item.he.indexOf(q) !== -1;
@@ -3120,6 +3165,7 @@
         stripTashkeel(item.fem).indexOf(sq) !== -1 || stripTashkeel(item.dual).indexOf(sq) !== -1 || item.he.indexOf(q) !== -1;
     }
     function dictItemInNav(item) {
+      if (state.dictMode === 'alpha') return state.alphaLetter === 'הכל' || dictLetterOf(item) === state.alphaLetter;
       if (state.dictMode === 'pos') return state.selectedPos === 'הכל' || posOf(item) === state.selectedPos;
       return state.selectedVocabCategory === 'הכל' || item.category === state.selectedVocabCategory;
     }
@@ -3129,18 +3175,21 @@
       if (!listEl) return;
       const q = state.dictSearch.trim(); const sq = stripTashkeel(q);
       const filtered = getDictItems().filter(function(item) { return dictItemInNav(item) && dictItemMatches(item, q, sq); });
+      if (state.dictMode === 'alpha') filtered.sort(dictCompare);
       const shown = filtered.slice(0, state.dictLimit);
       const countEl = document.getElementById('vocab-count-badge');
       if (countEl) countEl.textContent = filtered.length + ' תוצאות';
       const extLinks = q ? `<div class="pt-1 space-y-1"><p class="text-xs font-extrabold text-[#777777]">חיפוש "${escapeHtml(q)}" במילונים חיצוניים:</p>${dictLinksHtml(sq, false)}</div>` : '';
       if (!filtered.length) {
-        listEl.innerHTML = `<div class="p-6 rounded-2xl border-2 border-dashed border-[#e5e5e5] text-center space-y-2"><p class="font-extrabold text-[#777777]">לא נמצאה מילה כזו באוצר המילים של הקורס${(state.dictMode === 'pos' ? state.selectedPos !== 'הכל' : state.selectedVocabCategory !== 'הכל') ? ' בקטגוריה שנבחרה' : ''}.</p>${extLinks}</div>`;
+        listEl.innerHTML = `<div class="p-6 rounded-2xl border-2 border-dashed border-[#e5e5e5] text-center space-y-2"><p class="font-extrabold text-[#777777]">לא נמצאה מילה כזו באוצר המילים של הקורס${dictNavActive() ? ' בקטגוריה שנבחרה' : ''}.</p>${extLinks}</div>`;
         return;
       }
-      listEl.innerHTML = shown.map(function(item) {
+      listEl.innerHTML = shown.map(function(item, idx) {
+        const letterHead = (state.dictMode === 'alpha' && state.alphaLetter === 'הכל' && (idx === 0 || dictLetterOf(shown[idx - 1]) !== dictLetterOf(item)))
+          ? `<div class="pt-3"><span class="inline-block px-4 py-1 rounded-xl bg-[#1cb0f6] text-white font-extrabold text-lg ${state.alphaLang === 'ar' ? 'font-arabic' : ''}">${escapeHtml(dictLetterOf(item))}</span></div>` : '';
         const forms = item.isVerb ? [] : [['נקבה', item.fem, '#1453a3'], ['זוגי', item.dual, '#6f4ea1'], ['רבים', item.plural, '#58a700']].filter(function(f) { return f[1] && f[1] !== '-'; });
         const verbLine = item.isVerb ? `<div class="flex flex-wrap items-center gap-2 mt-1"><span class="px-2 py-0.5 rounded-lg bg-[#e5e5e5] text-[#4b4b4b] font-extrabold text-[11px]">שורש: ${escapeHtml(item.root)}</span><span style="background-color:${item.binyanBadgeColor || '#777'}" class="px-2 py-0.5 rounded-lg text-white font-extrabold text-[11px]">${escapeHtml(item.binyan)}</span><button onclick="selectVerbChip('${escapeHtml(item.ar)}')" class="duo-btn-blue px-3 py-1 rounded-xl font-extrabold text-[11px]">לוח נטיות מלא</button></div>` : '';
-        return `
+        return `${letterHead}
           <div class="p-3.5 rounded-2xl border-2 border-[#e5e5e5] flex items-start gap-3 hover:bg-[#f7f7f7] transition-colors">
             <button onclick="speakArabic('${escapeHtml(item.ar)}')" title="השמעה" class="w-10 h-10 rounded-xl bg-[#ddf4ff] text-[#1cb0f6] flex items-center justify-center shrink-0">🔊</button>
             <div class="flex-1 min-w-0">
@@ -3705,20 +3754,23 @@ function renderForumTab() {
       const t = e.target;
       if (t && (t.tagName === 'TEXTAREA' || (t.tagName === 'INPUT' && (!t.type || t.type === 'text' || t.type === 'search')))) kbField = t;
     });
+    let kbMin = false;
+    window.toggleKbMin = function() { kbMin = !kbMin; renderArabicKeyboard(); };
     function renderArabicKeyboard() {
       const root = document.getElementById('ar-keyboard-root'); if (!root) return;
       if (!kbOpen) { root.innerHTML = ''; return; }
-      const key = function(ch, label) { return `<button type="button" onmousedown="event.preventDefault()" onclick="kbInsert('${ch}')" class="kb-key ${label ? 'kb-key-mark' : ''} min-w-[36px] h-11 px-2 rounded-xl font-arabic text-xl font-bold" title="${label || ''}">${label ? '◌' + ch : ch}</button>`; };
-      root.innerHTML = `<div class="fixed bottom-0 inset-x-0 z-[60] kb-panel p-3 pb-4" dir="ltr">
-        <div class="max-w-3xl mx-auto space-y-2.5">
-          <div class="flex items-center justify-between" dir="rtl">
-            <div class="flex items-center gap-2.5">${kbIconSvg(34)}<div><div class="text-sm font-extrabold text-[#1899d6] leading-tight">מקלדת ערבית (لَوْحَةُ المَفَاتِيحِ)</div><div class="text-[11px] font-bold text-[#5b8fb0]">לחצו קודם על שדה טקסט ואז על האותיות</div></div></div>
-            <button type="button" onmousedown="event.preventDefault()" onclick="toggleArabicKeyboard()" class="kb-close w-9 h-9 rounded-full text-lg font-extrabold flex items-center justify-center" aria-label="סגירת המקלדת">✕</button>
-          </div>
-          ${AR_KB_ROWS.map(function(r) { return `<div class="flex flex-wrap justify-center gap-1.5">${r.map(function(c) { return key(c); }).join('')}</div>`; }).join('')}
-          <div class="flex flex-wrap justify-center gap-1.5 pt-1.5 border-t-2 border-dashed border-[#bfe8fd]">${AR_KB_MARKS.map(function(m) { return key(m[0], m[1]); }).join('')}</div>
-          <div class="flex justify-center gap-2"><button type="button" onmousedown="event.preventDefault()" onclick="kbInsert(' ')" class="kb-key px-20 h-11 rounded-xl font-extrabold text-sm">רווח</button><button type="button" onmousedown="event.preventDefault()" onclick="kbBackspace()" class="duo-btn-red px-7 h-11 rounded-xl font-extrabold text-sm">⌫</button></div>
-        </div></div>`;
+      const key = function(ch, label) { return `<button type="button" onmousedown="event.preventDefault()" onclick="kbInsert('${ch}')" class="kb-key ${label ? 'kb-key-mark' : ''} min-w-[25px] h-8 px-1 rounded-lg font-arabic text-base font-bold" title="${label || ''}">${label ? '◌' + ch : ch}</button>`; };
+      const head = `<div class="flex items-center justify-between gap-2" dir="rtl">
+          <div class="flex items-center gap-1.5">${kbIconSvg(26)}<span class="text-xs font-extrabold text-[#1899d6]">מקלדת ערבית</span></div>
+          <div class="flex items-center gap-1">
+            <button type="button" onmousedown="event.preventDefault()" onclick="toggleKbMin()" class="kb-close w-7 h-7 rounded-full text-sm font-extrabold flex items-center justify-center" aria-label="${kbMin ? 'הרחבת המקלדת' : 'מזעור המקלדת'}" title="${kbMin ? 'הרחבה' : 'מזעור'}">${kbMin ? '▢' : '–'}</button>
+            <button type="button" onmousedown="event.preventDefault()" onclick="toggleArabicKeyboard()" class="kb-close w-7 h-7 rounded-full text-sm font-extrabold flex items-center justify-center" aria-label="סגירת המקלדת">✕</button>
+          </div></div>`;
+      const body = kbMin ? '' : `
+          ${AR_KB_ROWS.map(function(r) { return `<div class="flex justify-center gap-[3px]">${r.map(function(c) { return key(c); }).join('')}</div>`; }).join('')}
+          <div class="flex justify-center gap-[3px] pt-1 border-t-2 border-dashed border-[#bfe8fd]">${AR_KB_MARKS.map(function(m) { return key(m[0], m[1]); }).join('')}</div>
+          <div class="flex justify-center gap-1"><button type="button" onmousedown="event.preventDefault()" onclick="kbInsert(' ')" class="kb-key flex-1 h-8 rounded-lg font-extrabold text-xs">רווח</button><button type="button" onmousedown="event.preventDefault()" onclick="kbBackspace()" class="duo-btn-red px-5 h-8 rounded-lg font-extrabold text-xs">⌫</button></div>`;
+      root.innerHTML = `<div class="fixed bottom-2 left-2 z-[60] kb-panel p-2 space-y-1.5" style="width:min(calc(100vw - 16px), 380px)" dir="ltr">${head}${body}</div>`;
     }
     function kbIconSvg(w) {
       const W = w || 46, H = Math.round(W * 40 / 56);
@@ -4318,7 +4370,7 @@ function renderForumTab() {
         const chip = function(label, active, fn, cnt) {
           return `<button onclick="${fn}('${escapeHtml(label)}')" class="px-3 py-1.5 rounded-xl text-xs font-extrabold ${active ? 'duo-btn-selected' : 'duo-btn-outline'}">${escapeHtml(label)} <span class="opacity-60">${cnt}</span></button>`;
         };
-        const navChips = state.dictMode === 'pos'
+        const navChips = state.dictMode === 'alpha' ? alphaNavHtml(allItems) : state.dictMode === 'pos'
           ? posCats.map(function(c) { return chip(c, state.selectedPos === c, 'setPos', c === 'הכל' ? allItems.length : allItems.filter(function(i) { return posOf(i) === c; }).length); }).join('')
           : topicCats.map(function(c) { return chip(c, state.selectedVocabCategory === c, 'setVocabCat', c === 'הכל' ? allItems.length : allItems.filter(function(i) { return i.category === c; }).length); }).join('');
         mainContentHtml = `
@@ -4342,6 +4394,7 @@ function renderForumTab() {
             <div class="p-4 rounded-2xl border-2 border-[#e5e5e5] bg-white space-y-3">
               <div class="flex flex-wrap items-center gap-2">
                 <span class="text-xs font-extrabold text-[#777777]">עיון לפי:</span>
+                <button onclick="setDictMode('alpha')" class="px-4 py-1.5 rounded-xl text-sm font-extrabold ${state.dictMode === 'alpha' ? 'duo-btn-selected' : 'duo-btn-outline'}">🔠 אלף-בית</button>
                 <button onclick="setDictMode('topic')" class="px-4 py-1.5 rounded-xl text-sm font-extrabold ${state.dictMode === 'topic' ? 'duo-btn-selected' : 'duo-btn-outline'}">🗂️ נושאים</button>
                 <button onclick="setDictMode('pos')" class="px-4 py-1.5 rounded-xl text-sm font-extrabold ${state.dictMode === 'pos' ? 'duo-btn-selected' : 'duo-btn-outline'}">🔤 חלקי דיבר</button>
                 <span id="vocab-count-badge" class="px-3 py-1 rounded-full bg-[#58cc02]/15 text-[#58a700] font-extrabold text-xs mr-auto"></span>
