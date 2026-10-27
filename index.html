@@ -4958,7 +4958,7 @@ function renderForumTab() {
       const input = document.getElementById('gz-key-input'), status = document.getElementById('gz-key-status'), btn = document.getElementById('gz-key-save');
       const v = input.value.trim().replace(/\s+/g, '');
       if (!v) { status.className = 'text-[11px] font-extrabold text-[#ea2b2b]'; status.textContent = 'הדביקו קודם את המפתח בשדה.'; return; }
-      if (!/^AIza[0-9A-Za-z_\-]{20,}$/.test(v)) { status.className = 'text-[11px] font-extrabold text-[#ea2b2b]'; status.textContent = 'זה לא נראה כמו מפתח Gemini: מפתח תקין מתחיל ב-AIza ואין בו רווחים.'; return; }
+      // if (!/^AIza[0-9A-Za-z_\-]{20,}$/.test(v)) { status.className = 'text-[11px] font-extrabold text-[#ea2b2b]'; status.textContent = 'זה לא נראה כמו מפתח Gemini: מפתח תקין מתחיל ב-AIza ואין בו רווחים.'; return; }
       btn.disabled = true; status.className = 'text-[11px] font-extrabold text-[#777777]'; status.textContent = 'בודקים את המפתח מול Google…';
       let ok = true, msg = '';
       try {
