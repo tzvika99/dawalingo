@@ -157,6 +157,36 @@
     @keyframes gzDots { 0%,80%,100% { opacity:.25 } 40% { opacity:1 } }
     .gz-dot { display:inline-block; width:7px; height:7px; margin:0 2px; border-radius:50%; background:#999; animation: gzDots 1.2s infinite; }
     .gz-dot:nth-child(2){ animation-delay:.2s } .gz-dot:nth-child(3){ animation-delay:.4s }
+
+    /* Story vocabulary: desktop hover tooltip; tap-to-reveal remains available on touchscreens. */
+    .story-word { position:relative; }
+    @media (hover: hover) and (pointer: fine) {
+      .story-word[data-gloss]:hover::after,
+      .story-word[data-gloss]:focus-visible::after {
+        content: attr(data-gloss);
+        position:absolute;
+        z-index:60;
+        right:50%;
+        bottom:calc(100% + 8px);
+        transform:translateX(50%);
+        width:max-content;
+        max-width:min(260px, 72vw);
+        padding:7px 10px;
+        border:1px solid #84d8ff;
+        border-radius:10px;
+        background:#ddf4ff;
+        color:#1453a3;
+        box-shadow:0 5px 16px rgba(20,83,163,.16);
+        font-family:'Rubik',sans-serif;
+        font-size:13px;
+        font-weight:800;
+        line-height:1.45;
+        white-space:normal;
+        text-align:center;
+        direction:rtl;
+        pointer-events:none;
+      }
+    }
   
 
     /* ------------------------------------------------------------------
@@ -485,16 +515,6 @@
             <circle cx="90" cy="186" r="7" fill="#292524" />
             <path d="M164 150 Q184 175 152 185" stroke="#e69f45" stroke-width="14" stroke-linecap="round" fill="none" />
             <circle cx="150" cy="186" r="7" fill="#292524" />
-            <!-- Israeli election ballot box -->
-            <g transform="translate(157 177) scale(.78)" aria-label="קלפי לבחירות בישראל">
-              <path d="M7 17 L55 8 L69 18 L19 28 Z" fill="#eff6ff" stroke="#1d4ed8" stroke-width="2.5" />
-              <path d="M7 17 L19 28 L19 60 L7 49 Z" fill="#bfdbfe" stroke="#1d4ed8" stroke-width="2.5" />
-              <path d="M19 28 L69 18 L68 50 L19 60 Z" fill="#ffffff" stroke="#1d4ed8" stroke-width="2.5" />
-              <path d="M28 18 L53 13" stroke="#1e293b" stroke-width="3.5" stroke-linecap="round" />
-              <path d="M32 0 L49 -4 L52 13 L35 16 Z" fill="#ffffff" stroke="#1d4ed8" stroke-width="2" />
-              <path d="M37 4 L47 11 M47 4 L37 11" stroke="#2563eb" stroke-width="1.8" stroke-linecap="round" />
-              <path d="M42 2 L48 12 L36 12 Z M36 3 L48 3 L42 13 Z" fill="none" stroke="#2563eb" stroke-width="1.2" />
-            </g>
           </g>
         </svg>
       </span>`;
@@ -5441,7 +5461,7 @@ function renderForumTab() {
           <div class="w-10 h-10 rounded-full bg-[#f7f7f7] border-2 border-[#e5e5e5] flex items-center justify-center text-xl shrink-0">${s.av}</div>
           <div class="max-w-[85%] p-3 rounded-2xl border-2 border-[#e5e5e5] bg-white text-right shadow-sm">
             <button onclick="speakArabic('${escapeHtml(s.ar)}')" class="block text-[11px] font-extrabold text-[#afafaf] font-arabic hover:text-[#1cb0f6]">${escapeHtml(s.sp)} 🔊</button>
-            <span class="block font-arabic text-2xl font-bold text-[#3c3c3c] leading-relaxed" dir="rtl">${s.ar.split(/\s+/).map(function(word) { return `<button type="button" onclick="storyRevealWord('${escapeHtml(word).replace(/'/g, '&#39;')}', event, ${lineIdx})" class="hover:bg-[#ddf4ff] rounded px-0.5 border-b border-dotted border-[#84d8ff]" title="לחצו לפירוש המילה">${escapeHtml(word)}</button>`; }).join(' ')}</span>
+            <span class="block font-arabic text-2xl font-bold text-[#3c3c3c] leading-relaxed" dir="rtl">${s.ar.split(/\s+/).map(function(word) { return `<button type="button" onclick="storyRevealWord('${escapeHtml(word).replace(/'/g, '&#39;')}', event, ${lineIdx})" class="story-word hover:bg-[#ddf4ff] rounded px-0.5 border-b border-dotted border-[#84d8ff]" data-gloss="${escapeHtml(storyGlossFor(word, s.he))}" title="במחשב: רחפו עם העכבר לפירוש; בנייד: לחצו על המילה">${escapeHtml(word)}</button>`; }).join(' ')}</span>
             ${st.wordTip && st.wordTip.lineIdx === lineIdx ? `<div id="story-word-tip-${lineIdx}" role="status" class="mt-2 p-2.5 rounded-xl bg-[#ddf4ff] border-2 border-[#84d8ff] text-sm font-extrabold text-[#1453a3]"><span class="font-arabic text-xl">${escapeHtml(st.wordTip.word)}</span> — ${escapeHtml(st.wordTip.he)}</div>` : ''}
             ${st.showHe ? `<span class="block text-xs font-bold text-[#777777] mt-1">${escapeHtml(s.he)}</span>` : ''}</div></div>`;
       }).join('');
