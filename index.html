@@ -4963,15 +4963,27 @@ function renderForumTab() {
         list.innerHTML = '<p class="text-xs font-bold text-[#777777] p-2">עדיין אין שיחות שמורות. השיחה תישמר כאן אוטומטית אחרי קבלת תשובה.</p><p class="text-[11px] font-bold text-[#afafaf] px-2">השיחות נשמרות בדפדפן הזה בלבד.</p>';
         return;
       }
-      list.innerHTML = '<p class="text-[11px] font-bold text-[#777777] px-2">השיחות נשמרות בדפדפן הזה בלבד.</p>' + chats.map(function(chat) {
+      list.innerHTML = '<p class="text-[11px] font-bold text-[#777777] px-2">השיחות נשמרות בדפדפן הזה בלבד. כדי למחוק שיחה, לחצו על ״מחיקה״ לידה.</p>' + chats.map(function(chat) {
         const safeId = String(chat.id).replace(/[^a-zA-Z0-9_-]/g, '');
         const stamp = chat.updatedAt ? new Date(chat.updatedAt).toLocaleString('he-IL', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
         const title = escapeHtml(chat.title || 'שיחה עם ע׳זאל');
-        return '<div class="flex items-stretch gap-2">' +
-          '<button type="button" onclick="gzLoadConversation(\'' + safeId + '\')" class="flex-1 min-w-0 text-right p-3 rounded-xl border-2 border-[#e5e5e5] bg-white hover:bg-[#ddf4ff] flex flex-col gap-1"><span class="font-extrabold text-sm text-[#3c3c3c] break-words">' + title + '</span><span class="text-[11px] font-bold text-[#777777]">' + escapeHtml(stamp) + '</span></button>' +
-          '<button type="button" onclick="gzDeleteConversation(\'' + safeId + '\')" title="מחיקת שיחה" aria-label="מחיקת שיחה" class="shrink-0 self-stretch px-3 rounded-xl border-2 border-[#ffd2d2] bg-white text-[#d92d2d] hover:bg-[#fff0f0] font-extrabold" style="min-width:44px">🗑️</button>' +
+        return '<div class="flex items-stretch gap-2 w-full">' +
+          '<button type="button" data-gz-open-chat="' + safeId + '" class="flex-1 min-w-0 text-right p-3 rounded-xl border-2 border-[#e5e5e5] bg-white hover:bg-[#ddf4ff] flex flex-col gap-1"><span class="font-extrabold text-sm text-[#3c3c3c] break-words">' + title + '</span><span class="text-[11px] font-bold text-[#777777]">' + escapeHtml(stamp) + '</span></button>' +
+          '<button type="button" data-gz-delete-chat="' + safeId + '" title="מחיקת שיחה זו" aria-label="מחיקת שיחה: ' + title.replace(/&quot;/g, '&amp;quot;') + '" class="shrink-0 self-stretch px-3 rounded-xl border-2 border-[#ffd2d2] bg-white text-[#d92d2d] hover:bg-[#fff0f0] font-extrabold text-xs" style="min-width:76px">🗑️ מחיקה</button>' +
           '</div>';
       }).join('');
+
+      // Bind actions after rendering so the open/delete controls work reliably on desktop and mobile.
+      list.querySelectorAll('[data-gz-open-chat]').forEach(function(button) {
+        button.addEventListener('click', function() {
+          window.gzLoadConversation(button.getAttribute('data-gz-open-chat'));
+        });
+      });
+      list.querySelectorAll('[data-gz-delete-chat]').forEach(function(button) {
+        button.addEventListener('click', function() {
+          window.gzDeleteConversation(button.getAttribute('data-gz-delete-chat'));
+        });
+      });
     }
     function gzRenderCurrentConversation() {
       const log = document.getElementById('gz-log');
@@ -5077,24 +5089,35 @@ function renderForumTab() {
       if (show) gzRenderSavedChats();
     };
     window.gzDeleteConversation = function(id) {
-      if (gazelleChat.busy) return;
+      if (gazelleChat.busy) {
+        window.alert('אי אפשר למחוק שיחה בזמן שע׳זאל מכין תשובה. נסו שוב כשהתשובה תסתיים.');
+        return;
+      }
+      id = String(id || '');
       const chats = gzReadSavedChats();
       const selected = chats.find(function(chat) { return chat.id === id; });
-      if (!selected) { gzRenderSavedChats(); return; }
-      const title = String(selected.title || 'שיחה עם ע׳זאל').replace(/[\r\n]+/g, ' ').slice(0, 100);
-      if (!window.confirm('למחוק את השיחה הזאת מההיסטוריה?\n' + title)) return;
+      if (!selected) {
+        gzRenderSavedChats();
+        return;
+      }
+      const title = String(selected.title || 'שיחה עם ע׳זאל').replace(/\s+/g, ' ').slice(0, 100);
+      if (!window.confirm('למחוק לצמיתות את השיחה הזאת מהיסטוריית ההתכתבויות?\n\n' + title)) return;
+
       const remaining = chats.filter(function(chat) { return chat.id !== id; });
       try {
         localStorage.setItem(GZ_CHAT_STORAGE_KEY, JSON.stringify(remaining));
       } catch (e) {
-        window.alert('לא ניתן למחוק את השיחה מהאחסון המקומי. נסו שוב.');
+        window.alert('לא ניתן למחוק את השיחה מהאחסון המקומי. בדקו שהדפדפן מאפשר שמירה ונסו שוב.');
         return;
       }
-      // If the deleted conversation is currently open, clear it too so it will not be saved again.
+
+      // If this conversation is open, clear the active copy too so it cannot be saved back later.
       if (gazelleChat.currentId === id) {
         gazelleChat.history = [];
         gazelleChat.currentId = null;
         gazelleChat.last = '';
+        const input = document.getElementById('gz-input');
+        if (input) input.value = '';
         gzRenderCurrentConversation();
       }
       gzRenderSavedChats();
