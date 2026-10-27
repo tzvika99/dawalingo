@@ -3765,7 +3765,7 @@ function authSegHtml(name, options, selected) {
 }
 function authProfileFieldsHtml(p) {
   p = p || {};
-  return `<label class="block text-sm font-extrabold text-[#4b4b4b]">שם מלא<input id="auth-name" class="auth-input mt-1" dir="rtl" maxlength="60" autocomplete="name" placeholder="למשל: יסמין כהן" value="${escapeHtml(p.fullName || '')}" /></label>
+  return `<label class="block text-sm font-extrabold text-[#4b4b4b]">שם מלא<input id="auth-name" class="auth-input mt-1" dir="rtl" maxlength="60" autocomplete="name" placeholder="למשל: אחמד כהן" value="${escapeHtml(p.fullName || '')}" /></label>
     <div class="space-y-1"><span class="block text-sm font-extrabold text-[#4b4b4b]">מגדר</span>${authSegHtml('auth-gender', [['male', '🙋‍♂️ זכר'], ['female', '🙋‍♀️ נקבה']], p.gender)}</div>
     <div class="space-y-1"><span class="block text-sm font-extrabold text-[#4b4b4b]">באיזו שנה בתואר?</span><div class="auth-seg" style="grid-auto-flow:row; grid-template-columns:repeat(3,minmax(0,1fr))">${DEGREE_YEARS.map(function(y, i) {
       return `<span class="relative"><input type="radio" name="auth-year" id="auth-year-${i}" value="${escapeHtml(y)}" ${p.year === y ? 'checked' : ''} /><label for="auth-year-${i}">${escapeHtml(y)}</label></span>`;
