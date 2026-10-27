@@ -4779,9 +4779,9 @@ function renderForumTab() {
     // אפשר להדביק כאן מפתח Gemini API (aistudio.google.com/apikey). אם משאירים ריק,
     // הצ׳אט יבקש את המפתח בפעם הראשונה וישמור אותו רק בדפדפן של המשתמש.
     const GEMINI_API_KEY = '';
-    // מהירות לפני תחכום: רק דגמי ה-Lite הקלים והמהירים של Gemini (בלי דגמי Flash/Pro ה״חושבים״ שמאטים את התשובה).
-    // בנוסף: ״החשיבה״ כבויה, אורך התשובה מוגבל, נשלחת רק ההיסטוריה האחרונה, והתשובה מוצגת בהדרגה (streaming).
-    const GEMINI_MODELS = ['gemini-1.5-flash', 'gemini-1.5-flash-latest', 'gemini-2.0-flash'];
+    // שימוש בדגמים יציבים ועדכניים; שמות הדגמים הישנים הוסרו ולכן גרמו לכשל בכל ניסיון.
+    // הדגם הקל והמהיר מועדף, והדגם היציב הנוסף משמש כחלופה.
+    const GEMINI_MODELS = ['gemini-3.5-flash-lite', 'gemini-3.8-flash'];
     function gzSleep(ms) { return new Promise(function(r) { setTimeout(r, ms); }); }
     function gzGenConfig(model) {
   return { temperature: 0.5, maxOutputTokens: 800 };
@@ -4816,7 +4816,8 @@ function renderForumTab() {
       return full.trim();
     }
     async function gzCallGemini(key, onWait, onText) {
-      let sawBusy = false, sawQuota = false;
+      let sawBusy = false, sawQuota = false, sawNetwork = false, sawMissingModel = false;
+      let lastApiMessage = '';
       for (let round = 0; round < 2; round++) {
         for (let m = 0; m < GEMINI_MODELS.length; m++) {
           const model = GEMINI_MODELS[m];
@@ -4827,24 +4828,52 @@ function renderForumTab() {
               headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
               body: JSON.stringify({ systemInstruction: { parts: [{ text: GAZELLE_SYSTEM_PROMPT }] }, contents: gzTrimHistory(), generationConfig: gzGenConfig(model) })
             });
-          } catch (netErr) { sawBusy = true; continue; }
+          } catch (netErr) {
+            sawNetwork = true;
+            lastApiMessage = netErr && netErr.message ? netErr.message : '';
+            continue;
+          }
           if (!res.ok) {
             const data = await res.json().catch(function() { return {}; });
-            const msg = (data && data.error && data.error.message) || '';
-            if (res.status === 401 || res.status === 403 || (res.status === 400 && /api key/i.test(msg))) {
-              const e = new Error('המפתח לא תקין או חסרה לו הרשאה. בדקו אותו דרך ⚙️.'); e.fatal = true; throw e;
+            const apiError = data && data.error ? data.error : {};
+            const msg = apiError.message || '';
+            lastApiMessage = msg || ('HTTP ' + res.status);
+            if (res.status === 401 || (res.status === 400 && /api key/i.test(msg))) {
+              const e = new Error('המפתח לא תקין או פג תוקף. בדקו אותו דרך ⚙️ ונסו שוב.'); e.fatal = true; throw e;
             }
-            if (res.status === 429) sawQuota = true; else sawBusy = true;
+            if (res.status === 402) {
+              const e = new Error('Google החזיר שגיאת חיוב או יתרת חשבון (402). בדקו את מצב החשבון ב-Google AI Studio.'); e.fatal = true; throw e;
+            }
+            if (res.status === 403) {
+              // ניסיון במודל החלופי יכול לעזור אם ההרשאה מוגבלת למודל מסוים.
+              sawMissingModel = true;
+              continue;
+            }
+            if (res.status === 429) { sawQuota = true; continue; }
+            if (res.status === 404 || /model.*(not found|does not exist|not supported|unavailable)|not found.*model/i.test(msg)) {
+              sawMissingModel = true;
+              continue;
+            }
+            if ([408, 500, 502, 503, 504].indexOf(res.status) !== -1) { sawBusy = true; continue; }
             continue;
           }
           try {
             const text = await gzReadStream(res, onText);
             if (text) return text;
-          } catch (streamErr) { sawBusy = true; }
+            lastApiMessage = 'המודל החזיר תשובה ריקה.';
+          } catch (streamErr) {
+            sawBusy = true;
+            lastApiMessage = streamErr && streamErr.message ? streamErr.message : '';
+          }
         }
-        if (round < 1) { if (onWait) onWait(round); await gzSleep(1200); }
+        if (round < 1) { if (onWait) onWait(round); await gzSleep(900); }
       }
-      throw new Error(sawBusy ? 'ע׳זאל עמוס כרגע: השרת של Gemini מקבל יותר מדי בקשות. ניסיתי כמה מודלים ולא הצלחתי. נסו שוב בעוד רגע.' : sawQuota ? 'חרגתם ממכסת הבקשות של המפתח. נסו שוב בעוד דקה.' : 'לא התקבלה תשובה. נסו לנסח את השאלה אחרת.');
+      if (sawBusy) throw new Error('שירות Gemini זמנית לא זמין או עמוס. נסו שוב בעוד רגע.');
+      if (sawQuota && sawMissingModel) throw new Error('לא ניתן כרגע לקבל תשובה מאף אחד מדגמי Gemini שנבדקו. ייתכן שיש מגבלת שימוש או בעיית הרשאה למודל. בדקו את המפתח ונסו שוב.');
+      if (sawQuota) throw new Error('הגעתם למגבלת הקצב או המכסה של Gemini. המתינו מעט ונסו שוב.');
+      if (sawMissingModel) throw new Error('לא נמצא דגם Gemini זמין למפתח או לפרויקט הזה. בדקו שהמפתח וההרשאות מוגדרים ב-Google AI Studio.');
+      if (sawNetwork) throw new Error('לא ניתן להתחבר לשרת Gemini. בדקו את חיבור האינטרנט ונסו שוב.');
+      throw new Error(lastApiMessage ? 'Gemini החזיר שגיאה: ' + lastApiMessage : 'לא התקבלה תשובה. נסו לנסח את השאלה אחרת.');
     }
     const GAZELLE_SYSTEM_PROMPT = [
       'אתה ע׳זאל (غَزَال), צבי ידידותי שעוזר לדוברי עברית ללמוד ערבית ספרותית (فُصْحَى).',
@@ -4998,7 +5027,7 @@ function renderForumTab() {
       const typing = gzAddBubble('model', '<span class="gz-dot"></span><span class="gz-dot"></span><span class="gz-dot"></span>');
       try {
         const logEl = document.getElementById('gz-log');
-        const reply = await gzCallGemini(key, function() { typing.innerHTML = '<span class="text-xs font-bold text-[#777777]">השרת עמוס, מנסה שוב...</span> <span class="gz-dot"></span><span class="gz-dot"></span><span class="gz-dot"></span>'; }, function(full) { typing.innerHTML = gzFormat(full); logEl.scrollTop = logEl.scrollHeight; });
+        const reply = await gzCallGemini(key, function() { typing.innerHTML = '<span class="text-xs font-bold text-[#777777]">מנסה חיבור חלופי...</span> <span class="gz-dot"></span><span class="gz-dot"></span><span class="gz-dot"></span>'; }, function(full) { typing.innerHTML = gzFormat(full); logEl.scrollTop = logEl.scrollHeight; });
         if (!reply) throw new Error('לא התקבלה תשובה. נסו לנסח את השאלה אחרת.');
         gazelleChat.history.push({ role: 'model', parts: [{ text: reply }] });
         typing.innerHTML = gzFormat(reply);
@@ -5224,7 +5253,7 @@ function renderForumTab() {
         if (st.k === 'o') return Object.assign({}, st, { w: shuffleDerangement(st.w) });
         return st;
       });
-      state.story = { id: id, steps: steps, i: 0, sel: null, picked: [], fb: null, correct: 0, asked: 0, showHe: false, wordTip: null };
+      state.story = { id: id, steps: steps, i: 0, sel: null, picked: [], fb: null, correct: 0, asked: 0, showHe: false, wordTip: null, scrollToWordTip: false };
       renderApp(); window.scrollTo(0, 0);
       const f = steps[0]; if (f && f.k === 'l') speakArabic(f.ar);
     };
@@ -5235,7 +5264,8 @@ function renderForumTab() {
       if (ev && ev.stopPropagation) ev.stopPropagation();
       if (!state.story) return;
       const line = typeof lineIdx === 'number' ? state.story.steps[lineIdx] : null;
-      state.story.wordTip = { word: word.replace(/[،؟.!,]/g, ''), he: storyGlossFor(word, line && line.he) };
+      state.story.wordTip = { word: word.replace(/[،؟.!,]/g, ''), he: storyGlossFor(word, line && line.he), lineIdx: lineIdx };
+      state.story.scrollToWordTip = true;
       renderApp();
     };
     window.storyPick = function(idx) { const st = state.story; if (st.fb) return; st.sel = idx; renderApp(); };
@@ -5302,6 +5332,7 @@ function renderForumTab() {
           <div class="max-w-[85%] p-3 rounded-2xl border-2 border-[#e5e5e5] bg-white text-right shadow-sm">
             <button onclick="speakArabic('${escapeHtml(s.ar)}')" class="block text-[11px] font-extrabold text-[#afafaf] font-arabic hover:text-[#1cb0f6]">${escapeHtml(s.sp)} 🔊</button>
             <span class="block font-arabic text-2xl font-bold text-[#3c3c3c] leading-relaxed" dir="rtl">${s.ar.split(/\s+/).map(function(word) { return `<button type="button" onclick="storyRevealWord('${escapeHtml(word).replace(/'/g, '&#39;')}', event, ${lineIdx})" class="hover:bg-[#ddf4ff] rounded px-0.5 border-b border-dotted border-[#84d8ff]" title="לחצו לפירוש המילה">${escapeHtml(word)}</button>`; }).join(' ')}</span>
+            ${st.wordTip && st.wordTip.lineIdx === lineIdx ? `<div id="story-word-tip-${lineIdx}" role="status" class="mt-2 p-2.5 rounded-xl bg-[#ddf4ff] border-2 border-[#84d8ff] text-sm font-extrabold text-[#1453a3]"><span class="font-arabic text-xl">${escapeHtml(st.wordTip.word)}</span> — ${escapeHtml(st.wordTip.he)}</div>` : ''}
             ${st.showHe ? `<span class="block text-xs font-bold text-[#777777] mt-1">${escapeHtml(s.he)}</span>` : ''}</div></div>`;
       }).join('');
       let action = '';
@@ -5333,7 +5364,6 @@ function renderForumTab() {
           ${betaBadge}</div>
         <div class="flex items-center justify-between"><h2 class="font-arabic text-2xl font-bold" dir="rtl">${escapeHtml(story.title)}</h2>
           <button onclick="storyToggleHe()" class="text-xs font-extrabold text-[#1cb0f6] hover:underline">${st.showHe ? 'הסתר תרגום משפט' : 'הצג תרגום משפט'}</button></div>
-        ${st.wordTip ? `<div class="p-3 rounded-2xl bg-[#ddf4ff] border-2 border-[#84d8ff] text-sm font-extrabold text-[#1453a3]"><span class="font-arabic text-xl">${escapeHtml(st.wordTip.word)}</span> — ${escapeHtml(st.wordTip.he)}</div>` : ''}
         <div class="space-y-3">${bubbles}</div>
         <div class="space-y-3">${action}</div><div id="story-end"></div></div>`;
     }
@@ -5718,7 +5748,20 @@ function renderForumTab() {
         renderVocabListOnly();
       }
       if (state.activeNav === 'stories' && state.story) {
-        setTimeout(function() { const el = document.getElementById('story-end'); if (el) el.scrollIntoView({ block: 'end', behavior: 'smooth' }); }, 40);
+        setTimeout(function() {
+          const activeStory = state.story;
+          if (!activeStory) return;
+          const wordTip = activeStory.scrollToWordTip && activeStory.wordTip
+            ? document.getElementById('story-word-tip-' + activeStory.wordTip.lineIdx)
+            : null;
+          if (wordTip) {
+            wordTip.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            activeStory.scrollToWordTip = false;
+          } else {
+            const el = document.getElementById('story-end');
+            if (el) el.scrollIntoView({ block: 'end', behavior: 'smooth' });
+          }
+        }, 40);
       }
       renderSessionOverlay();
     }
