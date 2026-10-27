@@ -4784,10 +4784,8 @@ function renderForumTab() {
     const GEMINI_MODELS = ['gemini-1.5-flash', 'gemini-1.5-flash-latest', 'gemini-2.0-flash'];
     function gzSleep(ms) { return new Promise(function(r) { setTimeout(r, ms); }); }
     function gzGenConfig(model) {
-      const cfg = { temperature: 0.5, maxOutputTokens: 800 };
-      if (!/^gemini-2\.0/.test(model)) cfg.thinkingConfig = { thinkingBudget: 0 };
-      return cfg;
-    }
+  return { temperature: 0.5, maxOutputTokens: 800 };
+}
     function gzTrimHistory() {
       const h = gazelleChat.history.slice(-6);
       while (h.length && h[0].role !== 'user') h.shift();
