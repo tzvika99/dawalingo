@@ -158,34 +158,18 @@
     .gz-dot { display:inline-block; width:7px; height:7px; margin:0 2px; border-radius:50%; background:#999; animation: gzDots 1.2s infinite; }
     .gz-dot:nth-child(2){ animation-delay:.2s } .gz-dot:nth-child(3){ animation-delay:.4s }
 
-    /* Story vocabulary: desktop hover tooltip; tap-to-reveal remains available on touchscreens. */
-    .story-word { position:relative; }
-    @media (hover: hover) and (pointer: fine) {
-      .story-word[data-gloss]:hover::after,
-      .story-word[data-gloss]:focus-visible::after {
-        content: attr(data-gloss);
-        position:absolute;
-        z-index:60;
-        right:50%;
-        bottom:calc(100% + 8px);
-        transform:translateX(50%);
-        width:max-content;
-        max-width:min(260px, 72vw);
-        padding:7px 10px;
-        border:1px solid #84d8ff;
-        border-radius:10px;
-        background:#ddf4ff;
-        color:#1453a3;
-        box-shadow:0 5px 16px rgba(20,83,163,.16);
-        font-family:'Rubik',sans-serif;
-        font-size:13px;
-        font-weight:800;
-        line-height:1.45;
-        white-space:normal;
-        text-align:center;
-        direction:rtl;
-        pointer-events:none;
-      }
+    /* Story vocabulary: desktop translation tooltip is positioned by JavaScript so it is not clipped by chat bubbles. */
+    .story-word { position:relative; cursor:help; }
+    .story-hover-tooltip {
+      position:fixed; display:none; z-index:10000; pointer-events:none;
+      width:max-content; max-width:min(280px, calc(100vw - 24px));
+      padding:8px 11px; border:1px solid #84d8ff; border-radius:10px;
+      background:#ddf4ff; color:#1453a3; box-shadow:0 5px 16px rgba(20,83,163,.18);
+      font-family:'Rubik',sans-serif; font-size:14px; font-weight:800; line-height:1.45;
+      white-space:normal; text-align:center; direction:rtl; overflow-wrap:anywhere;
+    }
+    @media (hover:none), (pointer:coarse) {
+      .story-hover-tooltip { display:none !important; }
     }
   
 
@@ -460,6 +444,7 @@
     // ============================================================================
     // FLASH-ANIMATED ARABIAN GAZELLE MASCOT (الغَزَال العَرَبِيّ) & TOPIC ICONS
     // ============================================================================
+    // Standard gazelle mascot SVG (no ballot or election accessories).
     function getGazelleMascotHTML(className, noClick) {
       const cls = className || "w-32 h-36";
       const clickAttrs = noClick ? 'class="inline-block shrink-0"' : 'onclick="openGazelleChat()" class="inline-block shrink-0 gz-mascot-click"';
@@ -5461,7 +5446,7 @@ function renderForumTab() {
           <div class="w-10 h-10 rounded-full bg-[#f7f7f7] border-2 border-[#e5e5e5] flex items-center justify-center text-xl shrink-0">${s.av}</div>
           <div class="max-w-[85%] p-3 rounded-2xl border-2 border-[#e5e5e5] bg-white text-right shadow-sm">
             <button onclick="speakArabic('${escapeHtml(s.ar)}')" class="block text-[11px] font-extrabold text-[#afafaf] font-arabic hover:text-[#1cb0f6]">${escapeHtml(s.sp)} 🔊</button>
-            <span class="block font-arabic text-2xl font-bold text-[#3c3c3c] leading-relaxed" dir="rtl">${s.ar.split(/\s+/).map(function(word) { return `<button type="button" onclick="storyRevealWord('${escapeHtml(word).replace(/'/g, '&#39;')}', event, ${lineIdx})" class="story-word hover:bg-[#ddf4ff] rounded px-0.5 border-b border-dotted border-[#84d8ff]" data-gloss="${escapeHtml(storyGlossFor(word, s.he))}" title="במחשב: רחפו עם העכבר לפירוש; בנייד: לחצו על המילה">${escapeHtml(word)}</button>`; }).join(' ')}</span>
+            <span class="block font-arabic text-2xl font-bold text-[#3c3c3c] leading-relaxed" dir="rtl">${s.ar.split(/\s+/).map(function(word) { return `<button type="button" onclick="storyRevealWord('${escapeHtml(word).replace(/'/g, '&#39;')}', event, ${lineIdx})" class="story-word hover:bg-[#ddf4ff] rounded px-0.5 border-b border-dotted border-[#84d8ff]" data-gloss="${escapeHtml(storyGlossFor(word, s.he))}" aria-label="${escapeHtml(word)} — ${escapeHtml(storyGlossFor(word, s.he))}">${escapeHtml(word)}</button>`; }).join(' ')}</span>
             ${st.wordTip && st.wordTip.lineIdx === lineIdx ? `<div id="story-word-tip-${lineIdx}" role="status" class="mt-2 p-2.5 rounded-xl bg-[#ddf4ff] border-2 border-[#84d8ff] text-sm font-extrabold text-[#1453a3]"><span class="font-arabic text-xl">${escapeHtml(st.wordTip.word)}</span> — ${escapeHtml(st.wordTip.he)}</div>` : ''}
             ${st.showHe ? `<span class="block text-xs font-bold text-[#777777] mt-1">${escapeHtml(s.he)}</span>` : ''}</div></div>`;
       }).join('');
@@ -5896,7 +5881,74 @@ function renderForumTab() {
       renderSessionOverlay();
     }
 
+    // Desktop-only word hover translation. Mobile and touch devices keep the existing tap-to-reveal behaviour.
+    function installStoryHoverGloss() {
+      if (!window.matchMedia || !window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
+      if (document.getElementById('story-hover-tooltip')) return;
+      const tip = document.createElement('div');
+      tip.id = 'story-hover-tooltip';
+      tip.className = 'story-hover-tooltip';
+      tip.setAttribute('role', 'tooltip');
+      tip.setAttribute('aria-hidden', 'true');
+      document.body.appendChild(tip);
+      let currentWord = null;
+
+      function hideTip() {
+        tip.style.display = 'none';
+        tip.setAttribute('aria-hidden', 'true');
+        currentWord = null;
+      }
+      function showTip(wordEl) {
+        const gloss = wordEl && wordEl.getAttribute('data-gloss');
+        if (!gloss) { hideTip(); return; }
+        currentWord = wordEl;
+        tip.textContent = gloss;
+        tip.style.display = 'block';
+        tip.setAttribute('aria-hidden', 'false');
+        const wordRect = wordEl.getBoundingClientRect();
+        const tipRect = tip.getBoundingClientRect();
+        const edge = 8;
+        const gap = 8;
+        let left = wordRect.left + wordRect.width / 2 - tipRect.width / 2;
+        left = Math.max(edge, Math.min(left, window.innerWidth - tipRect.width - edge));
+        let top = wordRect.top - tipRect.height - gap;
+        if (top < edge) top = wordRect.bottom + gap;
+        if (top + tipRect.height > window.innerHeight - edge) {
+          top = Math.max(edge, window.innerHeight - tipRect.height - edge);
+        }
+        tip.style.left = Math.round(left) + 'px';
+        tip.style.top = Math.round(top) + 'px';
+      }
+
+      document.addEventListener('mouseover', function(event) {
+        const wordEl = event.target && event.target.closest ? event.target.closest('.story-word[data-gloss]') : null;
+        if (wordEl && wordEl !== currentWord) showTip(wordEl);
+      });
+      document.addEventListener('mouseout', function(event) {
+        const wordEl = event.target && event.target.closest ? event.target.closest('.story-word[data-gloss]') : null;
+        if (!wordEl) return;
+        if (event.relatedTarget && wordEl.contains(event.relatedTarget)) return;
+        if (wordEl === currentWord) hideTip();
+      });
+      document.addEventListener('focusin', function(event) {
+        const wordEl = event.target && event.target.closest ? event.target.closest('.story-word[data-gloss]') : null;
+        if (wordEl) showTip(wordEl);
+      });
+      document.addEventListener('focusout', function(event) {
+        const wordEl = event.target && event.target.closest ? event.target.closest('.story-word[data-gloss]') : null;
+        if (wordEl && wordEl === currentWord) hideTip();
+      });
+      window.addEventListener('resize', function() { if (currentWord) showTip(currentWord); });
+      window.addEventListener('scroll', function() {
+        if (!currentWord) return;
+        const rect = currentWord.getBoundingClientRect();
+        if (rect.bottom < 0 || rect.top > window.innerHeight) hideTip();
+        else showTip(currentWord);
+      }, true);
+    }
+
     // Boot Application Immediately (the sign-up / sign-in screen covers it until the user is known)
+    installStoryHoverGloss();
     renderApp();
     renderArabicKeyboard();
     renderAuthGate();
