@@ -4781,7 +4781,7 @@ function renderForumTab() {
     const GEMINI_API_KEY = '';
     // מהירות לפני תחכום: רק דגמי ה-Lite הקלים והמהירים של Gemini (בלי דגמי Flash/Pro ה״חושבים״ שמאטים את התשובה).
     // בנוסף: ״החשיבה״ כבויה, אורך התשובה מוגבל, נשלחת רק ההיסטוריה האחרונה, והתשובה מוצגת בהדרגה (streaming).
-    const GEMINI_MODELS = ['gemini-2.5-flash-lite', 'gemini-flash-lite-latest', 'gemini-2.0-flash-lite'];
+    const GEMINI_MODELS = ['gemini-1.5-flash', 'gemini-1.5-flash-latest', 'gemini-2.0-flash'];
     function gzSleep(ms) { return new Promise(function(r) { setTimeout(r, ms); }); }
     function gzGenConfig(model) {
       const cfg = { temperature: 0.5, maxOutputTokens: 800 };
