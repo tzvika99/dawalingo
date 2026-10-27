@@ -3687,25 +3687,33 @@ function adoptUserProgress(uid, cloudProgress) {
 }
 
 if (auth) {
-  auth.onAuthStateChanged(function(user) {
-    authState.user = user;
-    authState.loadError = '';
-    if (!user) { authState.profile = null; authState.needsProfile = false; authState.ready = true; renderAuthGate(); return; }
-    if (authState.registering) return; // ההרשמה עצמה יוצרת את הפרופיל ומסיימת את התהליך
-    db.collection('users').doc(user.uid).get().then(function(doc) {
-      if (!doc.exists) {
-        authState.profile = null; authState.needsProfile = true;
-      } else {
-        authState.profile = doc.data(); authState.needsProfile = false;
-        const changed = adoptUserProgress(user.uid, authState.profile.progress);
-        const upd = { lastActive: Date.now(), email: user.email || authState.profile.email || '' };
-        if (changed) Object.assign(upd, progressSummary());
-        db.collection('users').doc(user.uid).update(upd).catch(function() {});
-      }
-      authState.ready = true; renderAuthGate(); renderApp(); renderArabicKeyboard();
-    }).catch(function(e) {
-      authState.ready = true; authState.loadError = authErrorText(e); renderAuthGate();
+  // שומרים את מצב ההתחברות בין ביקורים באותו דפדפן/פרופיל משתמש.
+  // לא מזהים משתמש לפי IP: כתובות יכולות להשתנות ולהיות משותפות לכמה אנשים.
+  auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).then(function() {
+    auth.onAuthStateChanged(function(user) {
+      authState.user = user;
+      authState.loadError = '';
+      if (!user) { authState.profile = null; authState.needsProfile = false; authState.ready = true; renderAuthGate(); return; }
+      if (authState.registering) return; // ההרשמה עצמה יוצרת את הפרופיל ומסיימת את התהליך
+      db.collection('users').doc(user.uid).get().then(function(doc) {
+        if (!doc.exists) {
+          authState.profile = null; authState.needsProfile = true;
+        } else {
+          authState.profile = doc.data(); authState.needsProfile = false;
+          const changed = adoptUserProgress(user.uid, authState.profile.progress);
+          const upd = { lastActive: Date.now(), email: user.email || authState.profile.email || '' };
+          if (changed) Object.assign(upd, progressSummary());
+          db.collection('users').doc(user.uid).update(upd).catch(function() {});
+        }
+        authState.ready = true; renderAuthGate(); renderApp(); renderArabicKeyboard();
+      }).catch(function(e) {
+        authState.ready = true; authState.loadError = authErrorText(e); renderAuthGate();
+      });
     });
+  }).catch(function(err) {
+    authState.ready = true;
+    authState.loadError = 'לא ניתן לשמור את מצב ההתחברות בדפדפן. בדקו שהאחסון המקומי והעוגיות מופעלים, ואז נסו לרענן את הדף.';
+    renderAuthGate();
   });
 } else {
   authState.ready = true;
@@ -3780,6 +3788,7 @@ function renderAuthGate() {
         ${reg ? authProfileFieldsHtml(authState.draft) : ''}
         <label class="block text-sm font-extrabold text-[#4b4b4b]">אימייל<input id="auth-email" type="email" dir="ltr" class="auth-input mt-1 text-left" autocomplete="email" required placeholder="name@example.com" value="${escapeHtml((authState.draft && authState.draft.email) || '')}" /></label>
         <label class="block text-sm font-extrabold text-[#4b4b4b]">סיסמה${reg ? ' <span class="font-bold text-[#afafaf]">(לפחות 6 תווים)</span>' : ''}<input id="auth-pass" type="password" dir="ltr" class="auth-input mt-1 text-left" autocomplete="${reg ? 'new-password' : 'current-password'}" required minlength="6" /></label>
+        ${reg ? '<label class="block text-sm font-extrabold text-[#4b4b4b]">אימות סיסמה<input id="auth-pass-confirm" type="password" dir="ltr" class="auth-input mt-1 text-left" autocomplete="new-password" required minlength="6" /></label>' : ''}
         <p id="auth-msg" class="text-sm font-extrabold min-h-[1.25rem]" aria-live="polite"></p>
         <button id="auth-submit" type="submit" class="duo-btn-green w-full py-3.5 rounded-2xl font-extrabold">${reg ? 'יצירת חשבון והתחלה' : 'כניסה'}</button>
         ${reg ? '' : `<button type="button" onclick="authResetPassword()" class="block mx-auto text-xs font-extrabold text-[#1cb0f6] hover:underline">שכחתי סיסמה</button>`}
@@ -3809,7 +3818,9 @@ window.authRegister = async function(e) {
   const prof = readProfileFields();
   if (prof.error) { authMsg(prof.error); return; }
   const email = document.getElementById('auth-email').value.trim(), pass = document.getElementById('auth-pass').value;
+  const passConfirm = document.getElementById('auth-pass-confirm').value;
   if (pass.length < 6) { authMsg('הסיסמה צריכה להכיל לפחות 6 תווים.'); return; }
+  if (pass !== passConfirm) { authMsg('הסיסמאות אינן זהות. ודאו שהקלדתם אותה סיסמה בשני השדות.'); return; }
   authBusy(true, 'יוצרים חשבון…'); authMsg('');
   authState.registering = true;
   try {
