@@ -185,18 +185,18 @@
       }
       #primary-sidebar > div:first-child { width:100%; }
       #primary-sidebar > div:first-child > div:first-child { display:none !important; }
-      #primary-sidebar nav { display:grid !important; grid-auto-flow:column; grid-auto-columns:minmax(0,1fr); gap:2px !important; width:100%; }
+      #primary-sidebar nav { display:grid !important; grid-template-columns:repeat(4,minmax(0,1fr)) !important; grid-auto-flow:row !important; grid-auto-columns:auto !important; gap:4px !important; width:100%; align-items:stretch; }
       #primary-sidebar nav > * + * { margin-top:0 !important; }
       #primary-sidebar nav button {
         display:flex !important; flex-direction:column !important; justify-content:center !important; align-items:center !important;
-        gap:3px !important; width:100% !important; min-height:54px; padding:6px 2px !important; border-radius:13px !important;
-        font-size:10px !important; line-height:1.05 !important;
+        gap:4px !important; width:100% !important; min-height:54px; height:100%; padding:6px 2px !important; border-radius:13px !important;
+        font-size:10px !important; line-height:1.05 !important; overflow-wrap:anywhere; text-align:center;
       }
       #primary-sidebar nav button span:first-child { display:block !important; font-size:19px !important; line-height:1 !important; }
       #primary-sidebar nav button .hidden.xl\:inline { display:none !important; }
-      #primary-sidebar nav button .mobile-nav-label { display:block !important; font-size:9px; line-height:1.05; white-space:nowrap; }
+      #primary-sidebar nav button .mobile-nav-label { display:block !important; font-size:10px; line-height:1.1; white-space:normal; text-align:center; }
       #primary-sidebar > div:last-child { display:none !important; }
-      .dawalingo-main { display:block !important; width:100% !important; max-width:none !important; padding:14px 12px calc(108px + env(safe-area-inset-bottom)) !important; }
+      .dawalingo-main { display:block !important; width:100% !important; max-width:none !important; padding:14px 12px calc(148px + env(safe-area-inset-bottom)) !important; }
       .dawalingo-hero { padding:15px !important; gap:10px !important; border-radius:22px !important; }
       .dawalingo-hero h1 { font-size:1.38rem !important; line-height:1.25 !important; }
       .dawalingo-hero .kb-toggle-btn { min-height:42px; }
@@ -205,17 +205,20 @@
       .dawalingo-main .overflow-x-auto { -webkit-overflow-scrolling:touch; }
       html #ar-keyboard-root .kb-panel { max-height:46dvh; overflow:auto; }
       html #ar-keyboard-root .kb-panel.kb-default-pos { right:8px; bottom:calc(196px + env(safe-area-inset-bottom)); }
-      html #dl-fab-dock, html body.dl-chat-open #dl-fab-dock { left:10px; bottom:calc(78px + env(safe-area-inset-bottom)); }
-      html body.dl-in-session #dl-fab-dock { bottom:calc(118px + env(safe-area-inset-bottom)); }
+      html #dl-fab-dock, html body.dl-chat-open #dl-fab-dock { left:10px; bottom:calc(132px + env(safe-area-inset-bottom)); }
+      html body.dl-in-session #dl-fab-dock { bottom:calc(150px + env(safe-area-inset-bottom)); }
       html .dl-fab { width:50px; height:50px; }
       .auth-card { padding:20px 16px !important; border-radius:24px !important; }
       .admin-table-wrap { margin:0 -4px; }
       #gz-panel {
-        top:max(8px, env(safe-area-inset-top)) !important; bottom:auto !important; left:8px !important; right:8px !important;
-        width:auto !important; max-width:none !important; height:min(68dvh,560px) !important;
-        max-height:calc(100dvh - 100px) !important; border-radius:22px !important;
+        top:max(8px, env(safe-area-inset-top)) !important; bottom:max(8px, env(safe-area-inset-bottom)) !important; left:8px !important; right:8px !important;
+        width:auto !important; max-width:none !important; height:auto !important;
+        max-height:none !important; border-radius:22px !important;
       }
-      #gz-panel form { padding-bottom:max(12px, env(safe-area-inset-bottom)) !important; }
+      #gz-panel form { padding-bottom:max(12px, env(safe-area-inset-bottom)) !important; flex-shrink:0; }
+      #gz-panel .gz-bubble { overflow-wrap:anywhere; word-break:normal; }
+      #gz-log { overflow-wrap:anywhere; }
+
       .music-form-grid { grid-template-columns:minmax(0,1fr) !important; }
       .music-card .music-meta { align-items:flex-start; }
     }
@@ -223,10 +226,13 @@
       .dawalingo-main { padding-left:18px !important; padding-right:18px !important; }
     }
     @media (max-width: 380px) {
-      #primary-sidebar nav button .mobile-nav-label { font-size:8px; }
-      #primary-sidebar nav button { min-height:50px; }
+      #primary-sidebar nav button .mobile-nav-label { font-size:9px; }
+      #primary-sidebar nav button { min-height:50px; padding:5px 1px !important; }
       .dawalingo-main { padding-left:9px !important; padding-right:9px !important; }
     }
+    .gz-chat-toolbar button { min-height:36px; }
+    #gz-history-panel button { overflow-wrap:anywhere; }
+
 
     /* ------------------------------------------------------------------
        Floating tools (keyboard + chat), draggable keyboard, auth, music word-store, admin
@@ -479,6 +485,16 @@
             <circle cx="90" cy="186" r="7" fill="#292524" />
             <path d="M164 150 Q184 175 152 185" stroke="#e69f45" stroke-width="14" stroke-linecap="round" fill="none" />
             <circle cx="150" cy="186" r="7" fill="#292524" />
+            <!-- Israeli election ballot box -->
+            <g transform="translate(157 177) scale(.78)" aria-label="קלפי לבחירות בישראל">
+              <path d="M7 17 L55 8 L69 18 L19 28 Z" fill="#eff6ff" stroke="#1d4ed8" stroke-width="2.5" />
+              <path d="M7 17 L19 28 L19 60 L7 49 Z" fill="#bfdbfe" stroke="#1d4ed8" stroke-width="2.5" />
+              <path d="M19 28 L69 18 L68 50 L19 60 Z" fill="#ffffff" stroke="#1d4ed8" stroke-width="2.5" />
+              <path d="M28 18 L53 13" stroke="#1e293b" stroke-width="3.5" stroke-linecap="round" />
+              <path d="M32 0 L49 -4 L52 13 L35 16 Z" fill="#ffffff" stroke="#1d4ed8" stroke-width="2" />
+              <path d="M37 4 L47 11 M47 4 L37 11" stroke="#2563eb" stroke-width="1.8" stroke-linecap="round" />
+              <path d="M42 2 L48 12 L36 12 Z M36 3 L48 3 L42 13 Z" fill="none" stroke="#2563eb" stroke-width="1.2" />
+            </g>
           </g>
         </svg>
       </span>`;
@@ -4885,7 +4901,8 @@ function renderForumTab() {
       'אל תשתמש בכותרות ובטבלאות. מותר להדגיש מילים ב-**כוכביות** וליצור רשימות קצרות.'
     ].join('\n');
 
-    const gazelleChat = { history: [], busy: false, built: false };
+    const GZ_CHAT_STORAGE_KEY = 'dawalingo_gazelle_saved_chats_v1';
+    const gazelleChat = { history: [], busy: false, built: false, currentId: null };
 
     function gzGetKey() {
       if (GEMINI_API_KEY) return GEMINI_API_KEY;
@@ -4908,6 +4925,60 @@ function renderForumTab() {
       log.scrollTop = log.scrollHeight;
       return d;
     }
+    function gzReadSavedChats() {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(GZ_CHAT_STORAGE_KEY) || '[]');
+        return Array.isArray(parsed) ? parsed.filter(function(c) { return c && typeof c.id === 'string' && Array.isArray(c.history); }) : [];
+      } catch (e) { return []; }
+    }
+    function gzPersistActiveChat() {
+      if (!Array.isArray(gazelleChat.history) || !gazelleChat.history.some(function(m) { return m && m.role === 'user'; })) return;
+      if (!gazelleChat.currentId) gazelleChat.currentId = 'gzchat-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+      const current = gzReadSavedChats();
+      const firstUser = gazelleChat.history.find(function(m) { return m && m.role === 'user'; });
+      const firstText = firstUser && firstUser.parts ? firstUser.parts.map(function(p) { return p.text || ''; }).join('') : '';
+      const item = {
+        id: gazelleChat.currentId,
+        title: (firstText || 'שיחה עם ע׳זאל').replace(/\s+/g, ' ').trim().slice(0, 58),
+        updatedAt: Date.now(),
+        history: gazelleChat.history.map(function(m) {
+          return { role: m.role, parts: (m.parts || []).map(function(part) { return { text: String(part.text || '') }; }) };
+        })
+      };
+      const next = [item].concat(current.filter(function(c) { return c.id !== item.id; })).sort(function(a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); }).slice(0, 30);
+      try { localStorage.setItem(GZ_CHAT_STORAGE_KEY, JSON.stringify(next)); } catch (e) {}
+      const panel = document.getElementById('gz-history-panel');
+      if (panel && panel.style.display !== 'none') gzRenderSavedChats();
+    }
+    function gzRenderSavedChats() {
+      const list = document.getElementById('gz-history-list');
+      if (!list) return;
+      const chats = gzReadSavedChats().sort(function(a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); });
+      if (!chats.length) {
+        list.innerHTML = '<p class="text-xs font-bold text-[#777777] p-2">עדיין אין שיחות שמורות. השיחה תישמר כאן אוטומטית אחרי קבלת תשובה.</p><p class="text-[11px] font-bold text-[#afafaf] px-2">השיחות נשמרות בדפדפן הזה בלבד.</p>';
+        return;
+      }
+      list.innerHTML = '<p class="text-[11px] font-bold text-[#777777] px-2">השיחות נשמרות בדפדפן הזה בלבד.</p>' + chats.map(function(chat) {
+        const safeId = String(chat.id).replace(/[^a-zA-Z0-9_-]/g, '');
+        const stamp = chat.updatedAt ? new Date(chat.updatedAt).toLocaleString('he-IL', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+        return '<button type="button" onclick="gzLoadConversation(\'' + safeId + '\')" class="w-full text-right p-3 rounded-xl border-2 border-[#e5e5e5] bg-white hover:bg-[#ddf4ff] flex flex-col gap-1"><span class="font-extrabold text-sm text-[#3c3c3c]">' + escapeHtml(chat.title || 'שיחה עם ע׳זאל') + '</span><span class="text-[11px] font-bold text-[#777777]">' + escapeHtml(stamp) + '</span></button>';
+      }).join('');
+    }
+    function gzRenderCurrentConversation() {
+      const log = document.getElementById('gz-log');
+      if (!log) return;
+      log.innerHTML = '';
+      if (!gazelleChat.history.length) {
+        gzAddBubble('model', gzFormat('أَهْلًا! أنا غَزَال. אני כאן לעזור עם ערבית: דקדוק, אוצר מילים, תיקון משפטים או כל שאלה אחרת. במה אפשר לעזור?'));
+      } else {
+        gazelleChat.history.forEach(function(message) {
+          const text = (message.parts || []).map(function(part) { return part.text || ''; }).join('');
+          gzAddBubble(message.role === 'user' ? 'user' : 'model', message.role === 'user' ? escapeHtml(text).replace(/\n/g, '<br>') : gzFormat(text));
+        });
+      }
+      const chips = document.getElementById('gz-chips');
+      if (chips) chips.style.display = gazelleChat.history.length ? 'none' : 'flex';
+    }
     function gzBuildPanel() {
       if (gazelleChat.built) return;
       gazelleChat.built = true;
@@ -4924,6 +4995,10 @@ function renderForumTab() {
             <button onclick="gzToggleKey()" title="הגדרות מפתח" class="w-8 h-8 rounded-xl hover:bg-black/10 text-lg">⚙️</button>
             <button onclick="closeGazelleChat()" title="סגירה" class="w-8 h-8 rounded-xl hover:bg-black/10 text-lg font-extrabold">✕</button>
           </div>
+          <div class="gz-chat-toolbar px-3 py-2 flex flex-wrap gap-2 border-b border-[#e5e5e5] bg-white">
+            <button type="button" onclick="gzStartNewChat()" title="שומר את השיחה הנוכחית ומתחיל שיחה חדשה" class="flex-1 min-w-0 px-3 py-2 rounded-xl border-2 border-[#e5e5e5] bg-white hover:bg-[#f7f7f7] text-xs font-extrabold text-[#4b4b4b]">↺ איפוס שיחה</button>
+            <button type="button" onclick="gzToggleHistory()" title="פתיחת שיחות שמורות" class="flex-1 min-w-0 px-3 py-2 rounded-xl border-2 border-[#bfe8fd] bg-[#ddf4ff] text-xs font-extrabold text-[#1453a3]">🗂️ שיחות שמורות</button>
+          </div>
           <div id="gz-key-box" style="display:none" class="p-3 bg-[#f7f7f7] border-b-2 border-[#e5e5e5] space-y-2.5 text-xs font-bold text-[#4b4b4b] max-h-[60%] overflow-y-auto">
             <div class="leading-relaxed">כדי שע׳זאל יוכל לענות צריך <strong>מפתח API חינמי של Google Gemini</strong>. זה לוקח בערך 2 דקות, לא צריך כרטיס אשראי, והמפתח נשמר רק בדפדפן שלך.</div>
             <button type="button" onclick="gzToggleGuide()" id="gz-guide-btn" aria-expanded="false" class="duo-btn-blue w-full px-3 py-2.5 rounded-xl font-extrabold text-sm">📘 הדרכה: איך משיגים מפתח API מגוגל (צעד אחר צעד)</button>
@@ -4938,6 +5013,10 @@ function renderForumTab() {
             <div class="flex gap-2"><input id="gz-key-input" type="password" dir="ltr" autocomplete="off" placeholder="AIza..." class="flex-1 min-w-0 px-3 py-2 rounded-xl border-2 border-[#e5e5e5] bg-white text-sm" /><button type="button" id="gz-key-save" onclick="gzSaveKey()" class="duo-btn-green px-3 rounded-xl font-extrabold text-xs whitespace-nowrap">שמירה ובדיקה</button></div>
             <p id="gz-key-status" class="text-[11px] font-extrabold" aria-live="polite"></p>
             <button type="button" onclick="gzClearKey()" class="text-[#ff4b4b] hover:underline">מחיקת המפתח השמור</button>
+          </div>
+          <div id="gz-history-panel" style="display:none" class="p-3 bg-[#f7f7f7] border-b-2 border-[#e5e5e5] max-h-[42%] overflow-y-auto space-y-2">
+            <div class="flex items-center justify-between gap-2"><strong class="text-sm text-[#3c3c3c]">השיחות הקודמות</strong><button type="button" onclick="gzToggleHistory(false)" class="text-xs font-extrabold text-[#1cb0f6]">סגירה ✕</button></div>
+            <div id="gz-history-list" class="space-y-2"></div>
           </div>
           <div id="gz-log" class="flex-1 overflow-y-auto p-3 flex flex-col gap-2.5 bg-white"></div>
           <div id="gz-chips" class="px-3 pb-2 flex flex-wrap gap-1.5"></div>
@@ -4954,7 +5033,7 @@ function renderForumTab() {
       document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') closeGazelleChat();
       });
-      gzAddBubble('model', gzFormat('أَهْلًا! أنا غَزَال. אני כאן לעזור עם ערבית: דקדוק, אוצר מילים, תיקון משפטים או כל שאלה אחרת. במה אפשר לעזור?'));
+      gzRenderCurrentConversation();
       const chips = ['מתי מוסיפים ال?', 'מה ההבדל בין דמה, פתחה וכסרה?', 'מה זה סמיכות?', 'תקן לי משפט בערבית'];
       document.getElementById('gz-chips').innerHTML = chips.map(function(c) {
         return `<button type="button" onclick="gzChip(this.textContent)" class="px-3 py-1.5 rounded-xl bg-white border-2 border-[#e5e5e5] text-xs font-extrabold text-[#777777] hover:bg-[#f7f7f7]">${escapeHtml(c)}</button>`;
@@ -4970,6 +5049,36 @@ function renderForumTab() {
     window.closeGazelleChat = function() {
       const p = document.getElementById('gz-panel'); if (p) p.style.display = 'none';
       document.body.classList.remove('dl-chat-open');
+    };
+    window.gzStartNewChat = function() {
+      if (gazelleChat.busy) return;
+      gzPersistActiveChat();
+      gazelleChat.history = [];
+      gazelleChat.currentId = null;
+      gazelleChat.last = '';
+      const historyPanel = document.getElementById('gz-history-panel');
+      if (historyPanel) historyPanel.style.display = 'none';
+      const input = document.getElementById('gz-input'); if (input) input.value = '';
+      gzRenderCurrentConversation();
+    };
+    window.gzToggleHistory = function(force) {
+      const panel = document.getElementById('gz-history-panel'); if (!panel) return;
+      const show = typeof force === 'boolean' ? force : panel.style.display === 'none';
+      panel.style.display = show ? 'block' : 'none';
+      if (show) gzRenderSavedChats();
+    };
+    window.gzLoadConversation = function(id) {
+      if (gazelleChat.busy) return;
+      gzPersistActiveChat();
+      const selected = gzReadSavedChats().find(function(chat) { return chat.id === id; });
+      if (!selected) return;
+      gazelleChat.currentId = selected.id;
+      gazelleChat.history = selected.history.map(function(m) {
+        return { role: m.role, parts: (m.parts || []).map(function(part) { return { text: String(part.text || '') }; }) };
+      });
+      const panel = document.getElementById('gz-history-panel'); if (panel) panel.style.display = 'none';
+      gzRenderCurrentConversation();
+      const input = document.getElementById('gz-input'); if (input) input.focus();
     };
     window.gzToggleKey = function() {
       const b = document.getElementById('gz-key-box'); b.style.display = b.style.display === 'none' ? 'block' : 'none';
@@ -5031,6 +5140,7 @@ function renderForumTab() {
         if (!reply) throw new Error('לא התקבלה תשובה. נסו לנסח את השאלה אחרת.');
         gazelleChat.history.push({ role: 'model', parts: [{ text: reply }] });
         typing.innerHTML = gzFormat(reply);
+        gzPersistActiveChat();
       } catch (e) {
         gazelleChat.history.pop();
         typing.className = 'text-sm font-bold leading-relaxed p-3 rounded-2xl max-w-[88%] bg-[#fff5d3] text-[#8c4103] ml-auto mr-0 self-end';
@@ -5541,6 +5651,7 @@ function renderForumTab() {
                 ${kbIconButton()}
               </div>
             </div>
+            <details class="rounded-2xl border-2 border-[#e5e5e5] bg-white p-4"><summary class="cursor-pointer font-extrabold text-sm text-[#1cb0f6]">➕ הוספת מילה חדשה או סריקת סיכום</summary><div class="pt-4">${addWordsHtml}</div></details>
             <div id="dict-morph-results"></div>
             <div class="p-4 rounded-2xl border-2 border-[#e5e5e5] bg-white space-y-3">
               <div class="flex flex-wrap items-center gap-2">
@@ -5553,7 +5664,6 @@ function renderForumTab() {
               <div class="flex flex-wrap gap-1.5">${navChips}</div>
             </div>
             <div id="vocab-items-container" class="space-y-2"></div>
-            <details class="rounded-2xl border-2 border-[#e5e5e5] bg-white p-4"><summary class="cursor-pointer font-extrabold text-sm text-[#1cb0f6]">➕ הוספת מילה חדשה או סריקת סיכום</summary><div class="pt-4">${addWordsHtml}</div></details>
           </div>
         `;
       } else if (state.activeNav === 'stories') {
@@ -5694,7 +5804,7 @@ function renderForumTab() {
                   ${authState.profile ? escapeHtml(greetingFor(authState.profile)) : 'ברוכים הבאים ל<span class="text-[#58cc02]">דעוה-לינגו</span>!'}
                 </h1>
                 <p class="text-xs sm:text-sm font-bold text-[#777777] max-w-md">
-                  ${authState.profile ? 'ממשיכים מאיפה שעצרת ב<span class="text-[#58cc02]">דעוה-לינגו</span>: אוצר מילים, דקדוק ותרגול מעשי — במקום אחד.' : 'מתקדמים צעד אחר צעד בערבית: אוצר מילים, דקדוק ותרגול מעשי — במקום אחד.'}
+                  מתקדמים צעד אחר צעד בערבית: אוצר מילים, דקדוק ותרגול מעשי — במקום אחד.
                 </p>
                 ${authState.profile ? `<div class="flex flex-wrap items-center justify-center sm:justify-start gap-1.5 text-[11px] font-extrabold">
                   <span class="px-2.5 py-1 rounded-lg bg-[#ddf4ff] text-[#1899d6]">🎓 ${escapeHtml(authState.profile.year || '')}</span>
