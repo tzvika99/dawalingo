@@ -381,87 +381,55 @@
       window.speechSynthesis.speak(u);
     }
 
+    // Original, synthesized feedback sounds (no external audio files or copied game effects).
+    function playToneSequence(sequence, volume) {
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        const ctx = new AudioCtx();
+        const startAt = ctx.currentTime + 0.025;
+        sequence.forEach(function(note) {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          const at = startAt + note.at;
+          const duration = note.duration || 0.16;
+          osc.type = note.type || 'sine';
+          osc.frequency.setValueAtTime(note.freq, at);
+          if (note.endFreq) osc.frequency.exponentialRampToValueAtTime(note.endFreq, at + duration);
+          gain.gain.setValueAtTime(0.0001, at);
+          gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, (note.gain || 0.23) * (volume || 1)), at + 0.018);
+          gain.gain.exponentialRampToValueAtTime(0.0001, at + duration);
+          osc.connect(gain); gain.connect(ctx.destination);
+          osc.start(at); osc.stop(at + duration + 0.025);
+        });
+        const total = Math.max.apply(null, sequence.map(function(n) { return n.at + (n.duration || 0.16); })) + 0.12;
+        setTimeout(function() { try { ctx.close(); } catch (e) {} }, total * 1000);
+      } catch (e) {}
+    }
     function playCorrectSound() {
-      const audio = new Audio('Duolingo Correct Sound Effect.mp3');
-      audio.volume = 0.9;
-      audio.play().catch(function() {
-        try {
-          const AudioCtx = window.AudioContext || window.webkitAudioContext;
-          const ctx = new AudioCtx();
-          const now = ctx.currentTime;
-          const osc1 = ctx.createOscillator();
-          const gain1 = ctx.createGain();
-          osc1.type = 'triangle';
-          osc1.frequency.setValueAtTime(587.33, now);
-          gain1.gain.setValueAtTime(0.35, now);
-          gain1.gain.exponentialRampToValueAtTime(0.01, now + 0.14);
-          osc1.connect(gain1); gain1.connect(ctx.destination);
-          osc1.start(now); osc1.stop(now + 0.14);
-
-          const osc2 = ctx.createOscillator();
-          const gain2 = ctx.createGain();
-          osc2.type = 'triangle';
-          osc2.frequency.setValueAtTime(880.0, now + 0.11);
-          gain2.gain.setValueAtTime(0.4, now + 0.11);
-          gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
-          osc2.connect(gain2); gain2.connect(ctx.destination);
-          osc2.start(now + 0.11); osc2.stop(now + 0.55);
-        } catch (e) {}
-      });
+      // Three bright, short notes with a soft bell-like contour.
+      playToneSequence([
+        { freq: 659.25, at: 0, duration: 0.13, gain: 0.22, type: 'sine' },
+        { freq: 830.61, at: 0.09, duration: 0.16, gain: 0.24, type: 'sine' },
+        { freq: 987.77, at: 0.19, duration: 0.25, gain: 0.22, type: 'triangle' }
+      ], 0.9);
     }
-
     function playIncorrectSound() {
-      const audio = new Audio('Duolingo Incorrect Answer sound effect.mp3');
-      audio.volume = 0.9;
-      audio.play().catch(function() {
-        try {
-          const AudioCtx = window.AudioContext || window.webkitAudioContext;
-          const ctx = new AudioCtx();
-          const now = ctx.currentTime;
-          const osc1 = ctx.createOscillator();
-          const gain1 = ctx.createGain();
-          osc1.type = 'sawtooth';
-          osc1.frequency.setValueAtTime(246.94, now);
-          gain1.gain.setValueAtTime(0.25, now);
-          gain1.gain.exponentialRampToValueAtTime(0.01, now + 0.18);
-          osc1.connect(gain1); gain1.connect(ctx.destination);
-          osc1.start(now); osc1.stop(now + 0.18);
-
-          const osc2 = ctx.createOscillator();
-          const gain2 = ctx.createGain();
-          osc2.type = 'sawtooth';
-          osc2.frequency.setValueAtTime(174.61, now + 0.15);
-          gain2.gain.setValueAtTime(0.3, now + 0.15);
-          gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
-          osc2.connect(gain2); gain2.connect(ctx.destination);
-          osc2.start(now + 0.15); osc2.stop(now + 0.5);
-        } catch (e) {}
-      });
+      // A low, gentle two-note reminder rather than a harsh buzzer.
+      playToneSequence([
+        { freq: 293.66, endFreq: 277.18, at: 0, duration: 0.18, gain: 0.19, type: 'triangle' },
+        { freq: 220.00, endFreq: 207.65, at: 0.14, duration: 0.22, gain: 0.18, type: 'sine' }
+      ], 0.82);
     }
-
     function playVictorySound() {
-      const audio = new Audio('Victory Sound Effect.mp3');
-      audio.volume = 0.95;
-      audio.play().catch(function() {
-        try {
-          const AudioCtx = window.AudioContext || window.webkitAudioContext;
-          const ctx = new AudioCtx();
-          const now = ctx.currentTime;
-          const notes = [523.25, 659.25, 783.99, 1046.50];
-          notes.forEach(function(freq, idx) {
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.type = 'triangle';
-            const startTime = now + idx * 0.12;
-            const duration = idx === notes.length - 1 ? 0.7 : 0.15;
-            osc.frequency.setValueAtTime(freq, startTime);
-            gain.gain.setValueAtTime(0.35, startTime);
-            gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
-            osc.connect(gain); gain.connect(ctx.destination);
-            osc.start(startTime); osc.stop(startTime + duration);
-          });
-        } catch (e) {}
-      });
+      // A short original rising arpeggio with a warm final chord-like pairing.
+      playToneSequence([
+        { freq: 392.00, at: 0, duration: 0.16, gain: 0.20, type: 'sine' },
+        { freq: 493.88, at: 0.10, duration: 0.18, gain: 0.21, type: 'sine' },
+        { freq: 587.33, at: 0.20, duration: 0.22, gain: 0.22, type: 'triangle' },
+        { freq: 783.99, at: 0.32, duration: 0.34, gain: 0.22, type: 'sine' },
+        { freq: 987.77, at: 0.34, duration: 0.30, gain: 0.09, type: 'triangle' }
+      ], 0.88);
     }
 
     // ============================================================================
@@ -1407,7 +1375,7 @@
     try {
       const savedWords = JSON.parse(localStorage.getItem('dawalingo_custom_vocab') || '[]');
       savedWords.forEach(function(w) {
-        if (w && w.ar && w.he && !CATEGORIZED_VOCABULARY.some(function(v){return stripTashkeel(v.ar) === stripTashkeel(w.ar) && (v.he === w.he || v.booklet);})) CATEGORIZED_VOCABULARY.push(w);
+        if (w && w.ar && w.he && !w.verbData && w.category !== 'פעלים' && !CATEGORIZED_VOCABULARY.some(function(v){return stripTashkeel(v.ar) === stripTashkeel(w.ar) && (v.he === w.he || v.booklet);})) CATEGORIZED_VOCABULARY.push(w);
       });
     } catch(e) {}
 
@@ -1832,6 +1800,169 @@
       if (c === 'ברכות וביטויים') return 'ביטויים וברכות';
       return 'שמות עצם';
     }
+    // User-submitted verbs: infer a lemma and generate a full conjugation table.
+    // Regular triliteral forms and common derived patterns II, III, IV, V, VI, VIII and X are supported.
+    // Hollow/weak/irregular verbs may need manual review; the UI states this to avoid implying perfect morphology.
+    function userVerbTokens(raw) {
+      const clean = String(raw || '').normalize('NFC').replace(/\u0640/g, '').trim();
+      const lastWord = clean.split(/\s+/).filter(Boolean).pop() || clean;
+      let tokens = (lastWord.match(/[\u0621-\u064A\u0671\u0649][\u064B-\u065F\u0670]*/g) || []).map(function(t) { return { ch: t.charAt(0), marks: t.slice(1), raw: t }; });
+      // A future سـ attached to the imperfect can be ignored for lemma extraction.
+      if (tokens.length >= 5 && tokens[0].ch === 'س' && ['أ','ا','ي','ت','ن'].indexOf(tokens[1].ch) !== -1) tokens = tokens.slice(1);
+      return tokens;
+    }
+    function tokenLetters(tokens) { return tokens.map(function(t) { return t.ch; }).join(''); }
+    function tokenHas(tokens, idx, mark) { return !!(tokens[idx] && tokens[idx].marks.indexOf(mark) !== -1); }
+    function cutTokenEnding(tokens, endings, minRootLetters) {
+      const chars = tokenLetters(tokens);
+      for (let i = 0; i < endings.length; i++) {
+        const ending = endings[i];
+        if (chars.endsWith(ending) && chars.length - ending.length >= (minRootLetters || 3)) {
+          return { tokens: tokens.slice(0, tokens.length - ending.length), ending: ending };
+        }
+      }
+      return { tokens: tokens.slice(), ending: '' };
+    }
+    function makeUserDerivedVerb(kind, cfg) {
+      const f = cfg.f, a = cfg.a, l = cfg.l, meaning = cfg.meaning, root = f + '.' + a + '.' + l;
+      if (kind === 2) return makeForm2Verb({ lemma: f + 'َ' + a + 'َّ' + l + 'َ', root: root, meaning: meaning, f: f, a: a, l: l });
+      if (kind === 5) return makeForm5Verb({ lemma: 'تَ' + f + 'َ' + a + 'َّ' + l + 'َ', root: root, meaning: meaning, f: f, a: a, l: l });
+      let lemma = '', pastStem = '', presentStem = '', pre = {}, binyan = '', color = '#1cb0f6', note = '';
+      if (kind === 3) {
+        lemma = f + 'َا' + a + 'َ' + l + 'َ'; pastStem = f + 'َا' + a + 'َ' + l + 'ْ'; presentStem = f + 'َا' + a + 'ِ' + l;
+        pre = { ana: 'أُ', ta: 'تُ', huwa: 'يُ', nahnu: 'نُ' }; binyan = 'הבניין השלישי - משקל فَاعَلَ'; color = '#ff9600'; note = 'תבנית משוערת: פועל בבניין השלישי (فَاعَلَ).';
+      } else if (kind === 4) {
+        lemma = 'أَ' + f + 'ْ' + a + 'َ' + l + 'َ'; pastStem = 'أَ' + f + 'ْ' + a + 'َ' + l + 'ْ'; presentStem = f + 'ْ' + a + 'ِ' + l;
+        pre = { ana: 'أُ', ta: 'تُ', huwa: 'يُ', nahnu: 'نُ' }; binyan = 'הבניין הרביעי - משקל أَفْعَلَ'; color = '#ffc800'; note = 'תבנית משוערת: פועל בבניין הרביעי (أَفْعَلَ).';
+      } else if (kind === 6) {
+        lemma = 'تَ' + f + 'َا' + a + 'َ' + l + 'َ'; pastStem = 'تَ' + f + 'َا' + a + 'َ' + l + 'ْ'; presentStem = 'تَ' + f + 'َا' + a + 'َ' + l;
+        pre = { ana: 'أَ', ta: 'تَ', huwa: 'يَ', nahnu: 'نَ' }; binyan = 'הבניין השישי - משקל تَفَاعَلَ'; color = '#1899d6'; note = 'תבנית משוערת: פועל בבניין השישי (تَفَاعَلَ).';
+      } else if (kind === 8) {
+        lemma = 'اِ' + f + 'ْتَ' + a + 'َ' + l + 'َ'; pastStem = 'اِ' + f + 'ْتَ' + a + 'َ' + l + 'ْ'; presentStem = f + 'ْتَ' + a + 'ِ' + l;
+        pre = { ana: 'أَ', ta: 'تَ', huwa: 'يَ', nahnu: 'نَ' }; binyan = 'הבניין השמיני - משקל اِفْتَعَلَ'; color = '#ff4b4b'; note = 'תבנית משוערת: פועל בבניין השמיני (اِفْتَعَلَ).';
+      } else if (kind === 10) {
+        lemma = 'اِسْتَ' + f + 'ْ' + a + 'َ' + l + 'َ'; pastStem = 'اِسْتَ' + f + 'ْ' + a + 'َ' + l + 'ْ'; presentStem = 'سْتَ' + f + 'ْ' + a + 'ِ' + l;
+        pre = { ana: 'أَ', ta: 'تَ', huwa: 'يَ', nahnu: 'نَ' }; binyan = 'הבניין העשירי - משקל اِسْتَفْعَلَ'; color = '#ff4b4b'; note = 'תבנית משוערת: פועל בבניין העשירי (اِسْتَفْعَلَ).';
+      }
+      function pastFem() { return lemma.slice(0, -1) + 'َتْ'; }
+      const past = {
+        ana: pastStem + 'تُ', anta: pastStem + 'تَ', anti: pastStem + 'تِ',
+        huwa: lemma, hiya: pastFem(), nahnu: pastStem + 'نَا', antum: pastStem + 'تُمْ',
+        antunna: pastStem + 'تُنَّ', hum: lemma.slice(0, -1) + 'ُوا', hunna: pastStem + 'نَ'
+      };
+      const p = function(prefix, ending) { return prefix + presentStem + ending; };
+      const present = {
+        ana: p(pre.ana, 'ُ'), anta: p(pre.ta, 'ُ'), anti: p(pre.ta, 'ِينَ'),
+        huwa: p(pre.huwa, 'ُ'), hiya: p(pre.ta, 'ُ'),
+        nahnu: p(pre.nahnu, 'ُ'), antum: p(pre.ta, 'ُونَ'), antunna: p(pre.ta, 'ْنَ'),
+        hum: p(pre.huwa, 'ُونَ'), hunna: p(pre.huwa, 'ْنَ')
+      };
+      // Keep the generated person prefixes explicit and readable.
+      const subj = buildSubjunctiveFromPresent(present);
+      return { lemma: lemma, root: root, meaning: meaning, binyan: binyan, binyanBadgeColor: color,
+        binyanNote: note + ' הנטייה נוצרה אוטומטית; בפועל חריג או חלול יש לבדוק את הצורות.', forms: { past: past, present: present, subjunctive: subj }, custom: true };
+    }
+    function makeUserVerbFromInput(raw, meaning) {
+      const originalTokens = userVerbTokens(raw);
+      if (originalTokens.length < 3) throw new Error('לא זוהו לפחות שלוש אותיות בפועל. הזינו פועל בערבית, רצוי עם ניקוד.');
+      let tokens = originalTokens.slice();
+      // Unmistakable past-person endings. Avoid stripping a final root letter in a 3-letter lemma.
+      const pastCut = cutTokenEnding(tokens, ['تُن','تُم','تن','تم','نا','وا','ت'], 3);
+      let wasPastEnding = !!pastCut.ending;
+      let isPresent = false;
+      if (wasPastEnding) tokens = pastCut.tokens;
+      else {
+        const chars0 = tokenLetters(tokens);
+        const startsPresent = ['ي','ن','ت','أ'].indexOf(chars0.charAt(0)) !== -1 && chars0.length >= 4 && chars0.charAt(0) !== 'ا';
+        const apparentPastIV = chars0.charAt(0) === 'أ' && chars0.length === 4 && tokenHas(tokens, tokens.length - 1, 'َ') && tokenHas(tokens, 1, 'ْ');
+        const apparentPastV = chars0.charAt(0) === 'ت' && chars0.length === 4 && tokenHas(tokens, 2, 'ّ');
+        const apparentPastVI = chars0.charAt(0) === 'ت' && chars0.length === 5 && chars0.charAt(2) === 'ا';
+        if (apparentPastIV || apparentPastV || apparentPastVI) {
+          isPresent = false;
+        } else if (startsPresent) {
+          isPresent = true;
+          const presentCut = cutTokenEnding(tokens, ['ون','ين','ن'], 4);
+          tokens = presentCut.tokens;
+          tokens = tokens.slice(1); // drop أ / ي / ت / ن of the imperfect
+        }
+      }
+      let chars = tokenLetters(tokens);
+      // Pattern recognition works from the stem after removing the personal prefix/suffix.
+      let kind = 1, radicalTokens = tokens.slice();
+      if (chars.startsWith('است') && chars.length >= 6) {
+        kind = 10; radicalTokens = tokens.slice(3, 6);
+      } else if (chars.startsWith('ست') && chars.length === 5) {
+        kind = 10; radicalTokens = tokens.slice(2, 5);
+      } else if (chars.startsWith('ا') && chars.length === 5 && chars.charAt(2) === 'ت') {
+        kind = 8; radicalTokens = [tokens[1], tokens[3], tokens[4]];
+      } else if (chars.length === 4 && chars.charAt(1) === 'ا') {
+        kind = 3; radicalTokens = [tokens[0], tokens[2], tokens[3]];
+      } else if (chars.startsWith('أ') && chars.length === 4) {
+        kind = 4; radicalTokens = tokens.slice(1, 4);
+      } else if (chars.startsWith('ت') && chars.length === 5 && chars.charAt(2) === 'ا') {
+        kind = 6; radicalTokens = [tokens[1], tokens[3], tokens[4]];
+      } else if (chars.startsWith('ت') && chars.length === 4 && tokenHas(tokens, 2, 'ّ')) {
+        kind = 5; radicalTokens = tokens.slice(1, 4);
+      } else if (chars.length === 3 && tokenHas(tokens, 1, 'ّ')) {
+        kind = 2; radicalTokens = tokens.slice(0, 3);
+      } else if (chars.length === 4 && chars.charAt(1) === 'ت') {
+        // E.g. يَجْتَمِعُ after removing the imperfect prefix.
+        kind = 8; radicalTokens = [tokens[0], tokens[2], tokens[3]];
+      } else if (chars.length === 3 && isPresent && originalTokens[0] && originalTokens[0].marks.indexOf('ُ') !== -1 && !tokenHas(tokens, 1, 'ّ')) {
+        // Form IV imperfect usually has a ḍamma on the person prefix (يُفْعِلُ / تُفْعِلُ), unlike Form I.
+        kind = 4; radicalTokens = tokens.slice(0, 3);
+      } else if (chars.length === 3) {
+        kind = 1; radicalTokens = tokens.slice(0, 3);
+      } else if (chars.length >= 3) {
+        // Conservative fallback: infer the final three radicals; mark the table as an approximation.
+        kind = 1; radicalTokens = tokens.slice(-3);
+      }
+      if (!radicalTokens || radicalTokens.length !== 3 || radicalTokens.some(function(t) { return !t; })) throw new Error('לא הצלחתי לזהות את שורש הפועל. נסו להזין את הפועל עם ניקוד או בצורת עבר גוף שלישי.');
+      const f = radicalTokens[0].ch, a = radicalTokens[1].ch, l = radicalTokens[2].ch;
+      const root = f + '.' + a + '.' + l;
+      const secondMarks = radicalTokens[1].marks || '';
+      // Present-tense vowels do not reliably identify the past vowel of a Form I verb.
+      // When input is imperfect, use the common past pattern فَعَلَ and preserve the observed present vowel.
+      const pastV = isPresent ? 'َ' : (secondMarks.indexOf('ُ') !== -1 ? 'ُ' : secondMarks.indexOf('ِ') !== -1 ? 'ِ' : 'َ');
+      const presV = isPresent && secondMarks.indexOf('ُ') !== -1 ? 'ُ' : isPresent && secondMarks.indexOf('ِ') !== -1 ? 'ِ' : 'ُ';
+      let verb;
+      if (kind === 1) {
+        const lemma = f + 'َ' + a + pastV + l + 'َ';
+        verb = makeForm1Verb({ lemma: lemma, root: root, meaning: meaning, f: f, a: a, l: l, pastV: pastV, presV: presV });
+        verb.custom = true;
+        verb.binyanNote += ' הנטייה נוצרה אוטומטית; בפועל חריג, חלול או חסר יש לבדוק את הצורות.';
+      } else {
+        verb = makeUserDerivedVerb(kind, { f: f, a: a, l: l, meaning: meaning });
+        verb.custom = true;
+      }
+      return verb;
+    }
+    function hydrateSavedCustomVerbs(savedList) {
+      const list = Array.isArray(savedList) ? savedList : [];
+      for (let i = VERB_CONJUGATION_DB.length - 1; i >= 0; i--) if (VERB_CONJUGATION_DB[i] && VERB_CONJUGATION_DB[i].custom) VERB_CONJUGATION_DB.splice(i, 1);
+      let changed = false;
+      list.forEach(function(item) {
+        if (!item || !item.ar || !item.he || (item.category !== 'פעלים' && !item.verbData)) return;
+        const originallySubmitted = item.ar;
+        let data = item.verbData;
+        if (!data) {
+          const already = VERB_CONJUGATION_DB.find(function(v) { return stripTashkeel(v.lemma) === stripTashkeel(item.ar); });
+          if (already) return;
+          try { data = makeUserVerbFromInput(item.ar, item.he); item.ar = data.lemma; item.verbData = data; item.pos = 'פעלים'; item.customVerb = true; changed = true; }
+          catch (e) { return; }
+        }
+        if (!VERB_CONJUGATION_DB.some(function(v) { return stripTashkeel(v.lemma) === stripTashkeel(data.lemma); })) VERB_CONJUGATION_DB.push(Object.assign({}, data, { custom: true }));
+        // Legacy custom verbs were also added to the nominal list; remove the duplicate in its old or normalized form.
+        for (let j = CATEGORIZED_VOCABULARY.length - 1; j >= 0; j--) {
+          const v = CATEGORIZED_VOCABULARY[j];
+          if (v && v.category === 'פעלים' && [originallySubmitted, item.ar, data.lemma].some(function(a) { return stripTashkeel(v.ar) === stripTashkeel(a); })) CATEGORIZED_VOCABULARY.splice(j, 1);
+        }
+      });
+      if (changed) { try { localStorage.setItem('dawalingo_custom_vocab', JSON.stringify(list)); } catch (e) {} }
+    }
+
+    try { hydrateSavedCustomVerbs(JSON.parse(localStorage.getItem('dawalingo_custom_vocab') || '[]')); } catch (e) {}
+
     function getDictItems() {
       const verbs = VERB_CONJUGATION_DB.map(function(v) {
         return { ar: v.lemma, he: v.meaning, category: 'פעלים', plural: '-', fem: '-', dual: '-', pos: 'פעלים', isVerb: true, root: v.root, binyan: v.binyan, binyanBadgeColor: v.binyanBadgeColor };
@@ -1940,7 +2071,14 @@
       if (!w) return '';
       const e = encodeURIComponent(w);
       const cls = compact ? 'px-2 py-1 text-[11px]' : 'px-3 py-2 text-xs';
-      return `<div class="flex flex-wrap items-center gap-1.5"><a href="https://en.wiktionary.org/wiki/${e}" target="_blank" rel="noopener noreferrer" class="duo-btn-outline ${cls} rounded-xl font-extrabold text-[#58a700]">Wiktionary ↗</a><button type="button" onclick="openMilson('${escapeHtml(w)}')" class="duo-btn-outline ${cls} rounded-xl font-extrabold text-[#1cb0f6]">מילון מילסון ↗</button></div>`;
+      const k = stripTashkeel(w).replace(/\u0640/g, '').replace(/\s+/g, ' ').trim();
+      const functionWords = ['بِرُفْقَةِ','بِالقُرْبِ مِنْ','بِشَكْلٍ عَامٍّ','بِالتَّحْدِيدِ','لِلتَّوَاصُلِ','بَدَلًا مِنْ','مِنْ أَجْلِ','عَلَى الرَّغْمِ مِنْ'].map(function(x) { return stripTashkeel(x).replace(/\u0640/g, '').replace(/\s+/g, ' ').trim(); });
+      const prepKeys = typeof PREP_SET !== 'undefined' ? PREP_SET.map(function(x) { return stripTashkeel(x).replace(/\u0640/g, '').replace(/\s+/g, ' ').trim(); }) : [];
+      const conjKeys = typeof CONJ_SET !== 'undefined' ? CONJ_SET.map(function(x) { return stripTashkeel(x).replace(/\u0640/g, '').replace(/\s+/g, ' ').trim(); }) : [];
+      const useSearch = /\s/.test(w) || prepKeys.indexOf(k) !== -1 || conjKeys.indexOf(k) !== -1 || functionWords.indexOf(k) !== -1;
+      const wikiUrl = useSearch ? 'https://en.wiktionary.org/w/index.php?search=' + e : 'https://en.wiktionary.org/wiki/' + e;
+      const wikiLabel = useSearch ? 'חיפוש ב-Wiktionary ↗' : 'Wiktionary ↗';
+      return `<div class="flex flex-wrap items-center gap-1.5"><a href="${wikiUrl}" target="_blank" rel="noopener noreferrer" class="duo-btn-outline ${cls} rounded-xl font-extrabold text-[#58a700]">${wikiLabel}</a><button type="button" onclick="openMilson('${escapeHtml(w)}')" class="duo-btn-outline ${cls} rounded-xl font-extrabold text-[#1cb0f6]">מילון מילסון ↗</button></div>`;
     }
     function showToast(msg) {
       try {
@@ -3646,6 +3784,7 @@
 
       if (isCorrect && state.activeSession.isTest) state.activeSession.correct++;
       if (isCorrect) {
+        recordLearningDay();
         playCorrectSound();
         state.feedback = {
           isCorrect: true,
@@ -4260,14 +4399,51 @@
       const he = document.getElementById('new-word-he').value.trim();
       const category = document.getElementById('new-word-category').value;
       const feedback = document.getElementById('add-word-feedback');
-      const duplicate = CATEGORIZED_VOCABULARY.find(function(v){return stripTashkeel(v.ar).toLowerCase() === stripTashkeel(ar).toLowerCase();});
-      if (duplicate) { feedback.textContent = 'המילה כבר קיימת במאגר: ' + duplicate.ar + ' — ' + duplicate.he + '. לא נוספה כפילות.'; feedback.className='text-sm font-bold text-[#ff4b4b]'; return; }
-      const item = {ar:ar,he:he,category:category,plural:'-',fem:'-',dual:'-'};
+      const cleanAr = stripTashkeel(ar).toLowerCase();
+      const existingNominal = CATEGORIZED_VOCABULARY.find(function(v) { return stripTashkeel(v.ar).toLowerCase() === cleanAr; });
+      if (category === 'פעלים') {
+        const existingVerb = findMatchedVerb(ar);
+        if (existingVerb) {
+          feedback.textContent = 'הצורה שהזנת שייכת כבר לפועל ' + existingVerb.lemma + ' — ' + existingVerb.meaning + '. לא נוצרה כפילות.';
+          feedback.className = 'text-sm font-bold text-[#ff4b4b]';
+          state.dictSearch = existingVerb.lemma;
+          const search = document.getElementById('dict-search-input'); if (search) search.value = existingVerb.lemma;
+          renderMorphologyLookupResults('dict-morph-results', state.dictSearch); renderVocabListOnly();
+          return;
+        }
+        if (existingNominal) {
+          feedback.textContent = 'המילה כבר קיימת במאגר: ' + existingNominal.ar + ' — ' + existingNominal.he + '. לא נוספה כפילות.';
+          feedback.className = 'text-sm font-bold text-[#ff4b4b]'; return;
+        }
+        let verbData;
+        try { verbData = makeUserVerbFromInput(ar, he); }
+        catch (err) { feedback.textContent = err.message || 'לא הצלחתי לזהות את הפועל. נסו להקליד אותו בערבית, רצוי עם ניקוד.'; feedback.className = 'text-sm font-bold text-[#ff4b4b]'; return; }
+        const item = { ar: verbData.lemma, he: he, category: 'פעלים', pos: 'פעלים', plural: '-', fem: '-', dual: '-', customVerb: true, verbData: verbData };
+        VERB_CONJUGATION_DB.push(Object.assign({}, verbData, { custom: true }));
+        try { const current = JSON.parse(localStorage.getItem('dawalingo_custom_vocab') || '[]'); current.push(item); localStorage.setItem('dawalingo_custom_vocab', JSON.stringify(current)); } catch (e) {}
+        if (typeof queueProgressSync === 'function') queueProgressSync();
+        feedback.textContent = 'הפועל נשמר כ-' + verbData.lemma + ' (עבר, גוף שלישי זכר) ונוסף לו לוח נטיות מלא. מומלץ לבדוק פעלים חריגים.';
+        feedback.className = 'text-sm font-bold text-[#58a700]';
+        document.getElementById('new-word-ar').value = ''; document.getElementById('new-word-he').value = '';
+        state.dictSearch = verbData.lemma;
+        const search = document.getElementById('dict-search-input'); if (search) search.value = verbData.lemma;
+        renderMorphologyLookupResults('dict-morph-results', state.dictSearch); renderVocabListOnly();
+        return;
+      }
+      if (existingNominal || getDictItems().some(function(v) { return stripTashkeel(v.ar).toLowerCase() === cleanAr; })) {
+        const duplicate = existingNominal || getDictItems().find(function(v) { return stripTashkeel(v.ar).toLowerCase() === cleanAr; });
+        feedback.textContent = 'המילה כבר קיימת במאגר: ' + duplicate.ar + ' — ' + duplicate.he + '. לא נוספה כפילות.';
+        feedback.className = 'text-sm font-bold text-[#ff4b4b]'; return;
+      }
+      const item = { ar: ar, he: he, category: category, plural: '-', fem: '-', dual: '-' };
       CATEGORIZED_VOCABULARY.push(item);
-      try { const current = JSON.parse(localStorage.getItem('dawalingo_custom_vocab') || '[]'); current.push(item); localStorage.setItem('dawalingo_custom_vocab',JSON.stringify(current)); } catch(e) {}
+      try { const current = JSON.parse(localStorage.getItem('dawalingo_custom_vocab') || '[]'); current.push(item); localStorage.setItem('dawalingo_custom_vocab', JSON.stringify(current)); } catch (e) {}
       if (typeof queueProgressSync === 'function') queueProgressSync();
-      feedback.textContent = 'נוסף בהצלחה למילון!'; feedback.className='text-sm font-bold text-[#58a700]';
-      document.getElementById('new-word-ar').value=''; document.getElementById('new-word-he').value='';
+      feedback.textContent = 'נוסף בהצלחה למילון!'; feedback.className = 'text-sm font-bold text-[#58a700]';
+      document.getElementById('new-word-ar').value = ''; document.getElementById('new-word-he').value = '';
+      state.dictSearch = ar;
+      const search = document.getElementById('dict-search-input'); if (search) search.value = ar;
+      renderMorphologyLookupResults('dict-morph-results', state.dictSearch); renderVocabListOnly();
     };
     window.scanVocabImage = async function(input) {
       const file = input.files && input.files[0]; if (!file) return;
@@ -4403,8 +4579,9 @@ function applyProgress(p) {
   state.storyProgress = (p && p.stories) || {};
   const cv = (p && p.customVocab) || [];
   try { localStorage.setItem('dawalingo_custom_vocab', JSON.stringify(cv)); } catch (e) {}
+  hydrateSavedCustomVerbs(cv);
   cv.forEach(function(w) {
-    if (w && w.ar && w.he && !CATEGORIZED_VOCABULARY.some(function(v) { return stripTashkeel(v.ar) === stripTashkeel(w.ar) && v.he === w.he; })) CATEGORIZED_VOCABULARY.push(w);
+    if (w && w.ar && w.he && !w.verbData && w.category !== 'פעלים' && !CATEGORIZED_VOCABULARY.some(function(v) { return stripTashkeel(v.ar) === stripTashkeel(w.ar) && v.he === w.he; })) CATEGORIZED_VOCABULARY.push(w);
   });
 }
 function progressSummary() {
@@ -5063,21 +5240,44 @@ function musicWordRow(w, postId, idx, songLabel) {
 // ---------------------------------------------------------------------------
 // הצבעה על שירים: כל משתמש רשום יכול לסמן ▲ (אהבתי) או ▼ (פחות), פעם אחת לכל שיר. לחיצה חוזרת מבטלת.
 // ---------------------------------------------------------------------------
-function musicScore(p) { return (Array.isArray(p.up) ? p.up.length : 0) - (Array.isArray(p.down) ? p.down.length : 0); }
-function musicMyVote(p) {
-  const me = authState.user; if (!me) return 0;
-  if (Array.isArray(p.up) && p.up.indexOf(me.uid) !== -1) return 1;
-  if (Array.isArray(p.down) && p.down.indexOf(me.uid) !== -1) return -1;
+const MUSIC_LOCAL_VOTES_KEY = 'dawalingo_music_local_votes_v1';
+let musicLocalVotes = (function() { try { return JSON.parse(localStorage.getItem(MUSIC_LOCAL_VOTES_KEY) || '{}') || {}; } catch (e) { return {}; } })();
+function saveMusicLocalVotes() { try { localStorage.setItem(MUSIC_LOCAL_VOTES_KEY, JSON.stringify(musicLocalVotes)); } catch (e) {} }
+function musicCloudVote(p, uid) {
+  if (!uid) return 0;
+  if (Array.isArray(p.up) && p.up.indexOf(uid) !== -1) return 1;
+  if (Array.isArray(p.down) && p.down.indexOf(uid) !== -1) return -1;
   return 0;
+}
+function musicScore(p) {
+  const base = (Array.isArray(p.up) ? p.up.length : 0) - (Array.isArray(p.down) ? p.down.length : 0);
+  const me = authState.user;
+  // A browser-only vote is added to this browser's display only; it is never represented as a global vote.
+  return base + (me && musicCloudVote(p, me.uid) ? 0 : (Number(musicLocalVotes[p.id]) || 0));
+}
+function musicMyVote(p) {
+  const me = authState.user;
+  const cloud = me ? musicCloudVote(p, me.uid) : 0;
+  return cloud || (Number(musicLocalVotes[p.id]) || 0);
+}
+function musicVoteLocally(id, dir, message) {
+  const current = Number(musicLocalVotes[id]) || 0;
+  if (current === dir) delete musicLocalVotes[id];
+  else musicLocalVotes[id] = dir;
+  saveMusicLocalVotes();
+  renderApp();
+  showToast(message || 'ההצבעה נשמרה בדפדפן הזה בלבד. כדי להשפיע על הדירוג המשותף, התחברו וודאו ש-Firestore מאפשר עדכון של music_posts.');
 }
 window.musicSetSort = function(v) { musicRoom.sort = v; renderApp(); };
 window.musicVote = async function(id, dir) {
   const me = authState.user;
-  if (!me) { showToast('צריך להתחבר כדי להצביע.'); return; }
+  if (!me) {
+    musicVoteLocally(id, dir, 'ההצבעה נשמרה בדפדפן הזה בלבד. התחברות מאפשרת הצבעה משותפת עם הקהילה.');
+    return;
+  }
   if (musicRoom.voting[id]) return;
   musicRoom.voting[id] = true;
   const ref = db.collection('music_posts').doc(id);
-  // עדכון מיידי על המסך, והאישור הסופי מגיע מהטרנזקציה בענן
   const local = musicRoom.posts.find(function(p) { return p.id === id; });
   const apply = function(d) {
     const up = (Array.isArray(d.up) ? d.up : []).filter(function(u) { return u !== me.uid; });
@@ -5095,9 +5295,12 @@ window.musicVote = async function(id, dir) {
         tx.update(ref, apply(doc.data()));
       });
     });
+    delete musicLocalVotes[id]; saveMusicLocalVotes();
+    if (state.activeNav === 'music') renderApp();
   } catch (e) {
-    if (local && before) { Object.assign(local, before); renderApp(); }
-    showToast('לא הצלחנו לשמור את ההצבעה. בדקו את החיבור ונסו שוב.');
+    if (local && before) Object.assign(local, before);
+    // Keep the control usable even if Firestore denies the write; be explicit that this fallback is local-only.
+    musicVoteLocally(id, dir, 'Firebase לא שמר את ההצבעה המשותפת (' + ((e && (e.code || e.message)) || 'שגיאה לא ידועה') + '). ההצבעה נשמרה בדפדפן הזה בלבד. בדקו את כללי Firestore עבור music_posts.');
   } finally { musicRoom.voting[id] = false; }
 };
 function musicVoteBox(p) {
@@ -5199,7 +5402,7 @@ function renderMusicTab() {
       <span class="inline-block px-2.5 py-1 rounded-lg bg-[#1cb0f6] text-white font-extrabold text-xs">المَكْتَبَة المُوسِيقِيَّة • THE ARABIC SOUNDTRACK</span>
       <div class="flex items-center gap-3"><div class="min-w-0 flex-1"><h2 class="text-2xl sm:text-3xl font-extrabold">מוזיקה בערבית 🎧</h2><p class="mt-2 text-sm font-bold text-[#4b4b4b] leading-relaxed">פלייליסט של הקהילה: שירים קלאסיים, פופ, ראפ, מוזיקה עממית ומה שביניהם. מוסיפים קישור, מאזינים יחד, ומגלים ערבית דרך הצליל.</p></div>${getGazelleMascotHTML('w-16 h-20 shrink-0', true)}</div>
       <div class="flex flex-wrap gap-2 text-xs font-extrabold"><span class="px-3 py-1.5 rounded-xl bg-white border border-[#bfe8fd]">🎙️ ${allPosts.length} שיתופים</span><span class="px-3 py-1.5 rounded-xl bg-white border border-[#e5e5e5]">🌍 ניבים וסגנונות</span><span class="px-3 py-1.5 rounded-xl bg-white border border-[#e5e5e5]">📦 ${allWords.length} מילים במחסן</span></div>
-      <p class="text-xs font-bold text-[#777777]">הערה: משתפים קישורים רשמיים ליצירות; הנגן מגיע מ-YouTube / Spotify / SoundCloud ולא מועלה קובץ מוזיקה לאתר.</p>
+      <p class="text-xs font-bold text-[#777777]">הערה: משתפים קישורים רשמיים ליצירות; הנגן מגיע מ-YouTube / Spotify / SoundCloud ולא מועלה קובץ מוזיקה לאתר. הצבעה של משתמש מחובר נשמרת בקהילה; אם אין התחברות או ש-Firebase חוסם כתיבה, ההצבעה נשמרת רק בדפדפן ומסומנת כך.</p>
     </div>
     <div class="flex flex-wrap items-center gap-2"><button type="button" onclick="musicToggleCompose()" class="duo-btn-green px-5 py-3 rounded-xl font-extrabold text-sm">➕ שיתוף שיר</button><span class="text-xs font-bold text-[#777777]">כל שיר חדש מוסיף צבע לפלייליסט המשותף</span></div>
     ${compose}
@@ -5414,6 +5617,12 @@ function renderForumTab() {
     ];
     const AR_KB_MARKS = [['َ','فתחה'],['ُ','דמה'],['ِ','כסרה'],['ً','תנוין פתחה'],['ٌ','תנוין דמה'],['ٍ','תנוין כסרה'],['ْ','סוקון'],['ّ','שדה']];
     let kbOpen = false, kbField = null;
+    let kbScale = (function() { try { const n = Number(localStorage.getItem('dawalingo_kb_scale') || 100); return Math.max(70, Math.min(130, isFinite(n) ? n : 100)); } catch (e) { return 100; } })();
+    window.kbResize = function(delta) {
+      kbScale = Math.max(70, Math.min(130, kbScale + Number(delta || 0)));
+      try { localStorage.setItem('dawalingo_kb_scale', String(kbScale)); } catch (e) {}
+      renderArabicKeyboard();
+    };
     document.addEventListener('focusin', function(e) {
       const t = e.target;
       if (t && (t.tagName === 'TEXTAREA' || (t.tagName === 'INPUT' && (!t.type || t.type === 'text' || t.type === 'search')))) kbField = t;
@@ -5426,7 +5635,8 @@ function renderForumTab() {
       try { const p = JSON.parse(localStorage.getItem(KB_POS_KEY) || 'null'); return p && isFinite(p.x) && isFinite(p.y) ? p : null; } catch (e) { return null; }
     }
     function kbClampPos(panel, x, y) {
-      const w = panel.offsetWidth, h = panel.offsetHeight;
+      const zoom = window.matchMedia && window.matchMedia('(min-width: 768px)').matches ? kbScale / 100 : 1;
+      const w = panel.offsetWidth * zoom, h = panel.offsetHeight * zoom;
       return { x: Math.min(Math.max(4, x), Math.max(4, window.innerWidth - w - 4)), y: Math.min(Math.max(4, y), Math.max(4, window.innerHeight - h - 4)) };
     }
     function kbApplyPos(panel) {
@@ -5483,6 +5693,11 @@ function renderForumTab() {
       const head = `<div class="flex items-center justify-between gap-2" dir="rtl">
           <div class="kb-drag-handle flex-1 flex items-center gap-1.5" title="גררו כדי להזיז את המקלדת • לחיצה כפולה מחזירה למקום"><span class="kb-grip" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>${kbIconSvg(26)}<span class="text-xs font-extrabold text-[#1899d6]">מקלדת ערבית</span><span class="text-[10px] font-bold text-[#5aa9d6] hidden sm:inline">• גררו להזזה</span></div>
           <div class="flex items-center gap-1">
+            <div class="hidden md:flex items-center gap-1 px-1" title="שינוי גודל המקלדת במחשב">
+              <button type="button" onmousedown="event.preventDefault()" onclick="kbResize(-10)" class="kb-close w-7 h-7 rounded-lg text-xs font-extrabold" aria-label="הקטנת המקלדת">A−</button>
+              <span class="text-[10px] font-extrabold text-[#1899d6] min-w-[30px] text-center">${kbScale}%</span>
+              <button type="button" onmousedown="event.preventDefault()" onclick="kbResize(10)" class="kb-close w-7 h-7 rounded-lg text-xs font-extrabold" aria-label="הגדלת המקלדת">A+</button>
+            </div>
             ${kbSavedPos() ? `<button type="button" onmousedown="event.preventDefault()" onclick="kbResetPos()" class="kb-close w-7 h-7 rounded-full text-sm font-extrabold flex items-center justify-center" aria-label="החזרת המקלדת למקומה" title="החזרה למקום">↺</button>` : ''}
             <button type="button" onmousedown="event.preventDefault()" onclick="toggleKbMin()" class="kb-close w-7 h-7 rounded-full text-sm font-extrabold flex items-center justify-center" aria-label="${kbMin ? 'הרחבת המקלדת' : 'מזעור המקלדת'}" title="${kbMin ? 'הרחבה' : 'מזעור'}">${kbMin ? '▢' : '–'}</button>
             <button type="button" onmousedown="event.preventDefault()" onclick="toggleArabicKeyboard()" class="kb-close w-7 h-7 rounded-full text-sm font-extrabold flex items-center justify-center" aria-label="סגירת המקלדת">✕</button>
@@ -5493,6 +5708,7 @@ function renderForumTab() {
           <div class="flex justify-center gap-1"><button type="button" onmousedown="event.preventDefault()" onclick="kbInsert(' ')" class="kb-key flex-1 h-8 rounded-lg font-extrabold text-xs">רווח</button><button type="button" onmousedown="event.preventDefault()" onclick="kbBackspace()" class="duo-btn-red px-5 h-8 rounded-lg font-extrabold text-xs">⌫</button></div>`;
       root.innerHTML = `<div class="kb-panel p-2 space-y-1.5" role="dialog" aria-label="מקלדת ערבית" dir="ltr">${head}${body}</div>`;
       const panel = root.firstElementChild;
+      if (window.matchMedia && window.matchMedia('(min-width: 768px)').matches) panel.style.zoom = String(kbScale / 100);
       kbApplyPos(panel);
       kbInitDrag(panel);
     }
@@ -6304,6 +6520,110 @@ function renderForumTab() {
       if (delta > 1) window.scrollBy({ top: delta, behavior: 'smooth' });
     }
 
+    // Dictionary study mode: flashcards and multiple-choice quiz; pools can be grouped by topic or part of speech.
+    const dictStudy = { mode: '', filterKind: 'topic', filterValue: 'הכל', pool: [], index: 0, flipped: false, answered: false, correct: 0, known: 0, missed: 0, options: [] };
+    function dictStudyGetPool() {
+      return getDictItems().filter(function(item) {
+        if (!item || !item.ar || !item.he) return false;
+        if (dictStudy.filterValue === 'הכל') return true;
+        return dictStudy.filterKind === 'topic' ? item.category === dictStudy.filterValue : posOf(item) === dictStudy.filterValue;
+      });
+    }
+    function dictStudyShuffle(items) {
+      const a = items.slice();
+      for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = a[i]; a[i] = a[j]; a[j] = t; }
+      return a;
+    }
+    function dictStudyPrepareOptions() {
+      const current = dictStudy.pool[dictStudy.index];
+      if (!current) { dictStudy.options = []; return; }
+      const meanings = Array.from(new Set(getDictItems().map(function(v) { return v.he; }).filter(function(he) { return he && he !== current.he; })));
+      const wrong = dictStudyShuffle(meanings).slice(0, 3).map(function(he) { return { he: he, right: false }; });
+      dictStudy.options = dictStudyShuffle([{ he: current.he, right: true }].concat(wrong));
+    }
+    window.dictStudySetFilter = function(kind, value) {
+      dictStudy.filterKind = kind === 'pos' ? 'pos' : 'topic'; dictStudy.filterValue = value || 'הכל';
+      dictStudy.pool = []; dictStudy.index = 0; dictStudy.flipped = false; dictStudy.answered = false; dictStudy.correct = 0; dictStudy.known = 0; dictStudy.missed = 0;
+      renderApp();
+    };
+    window.dictStudyStart = function(mode) {
+      dictStudy.mode = mode === 'quiz' ? 'quiz' : 'flashcards';
+      dictStudy.pool = dictStudyShuffle(dictStudyGetPool()); dictStudy.index = 0; dictStudy.flipped = false; dictStudy.answered = false; dictStudy.correct = 0; dictStudy.known = 0; dictStudy.missed = 0;
+      dictStudyPrepareOptions(); renderApp();
+    };
+    window.dictStudyFlip = function() { dictStudy.flipped = !dictStudy.flipped; renderApp(); };
+    window.dictStudyChoose = function(index) {
+      if (dictStudy.answered || !dictStudy.pool[dictStudy.index]) return;
+      const chosen = dictStudy.options[index]; if (!chosen) return;
+      dictStudy.answered = true;
+      if (chosen.right) { dictStudy.correct++; recordLearningDay(); playCorrectSound(); }
+      else playIncorrectSound();
+      renderApp();
+    };
+    window.dictStudyRateCard = function(knew) {
+      if (!dictStudy.pool[dictStudy.index]) return;
+      if (knew) { dictStudy.known++; recordLearningDay(); playCorrectSound(); } else { dictStudy.missed++; playIncorrectSound(); }
+      dictStudy.index++; dictStudy.flipped = false; dictStudy.answered = false; dictStudyPrepareOptions(); renderApp();
+    };
+    window.dictStudyNext = function() {
+      dictStudy.index++; dictStudy.flipped = false; dictStudy.answered = false; dictStudyPrepareOptions(); renderApp();
+    };
+    function renderDictionaryStudyPanel(allItems) {
+      const topics = Array.from(new Set(allItems.map(function(v) { return v.category; }).filter(Boolean))).sort(function(a,b) { return a.localeCompare(b, 'he'); });
+      const pos = POS_ORDER.filter(function(p) { return allItems.some(function(v) { return posOf(v) === p; }); });
+      const topicSelect = `<select onchange="dictStudySetFilter('topic',this.value)" class="p-2 rounded-xl border-2 border-[#e5e5e5] bg-white text-sm font-bold max-w-full"><option value="הכל" ${dictStudy.filterKind === 'topic' && dictStudy.filterValue === 'הכל' ? 'selected' : ''}>כל הנושאים</option>${topics.map(function(t) { return `<option value="${escapeHtml(t)}" ${dictStudy.filterKind === 'topic' && dictStudy.filterValue === t ? 'selected' : ''}>${escapeHtml(t)}</option>`; }).join('')}</select>`;
+      const posSelect = `<select onchange="dictStudySetFilter('pos',this.value)" class="p-2 rounded-xl border-2 border-[#e5e5e5] bg-white text-sm font-bold max-w-full"><option value="הכל" ${dictStudy.filterKind === 'pos' && dictStudy.filterValue === 'הכל' ? 'selected' : ''}>כל חלקי הדיבר</option>${pos.map(function(t) { return `<option value="${escapeHtml(t)}" ${dictStudy.filterKind === 'pos' && dictStudy.filterValue === t ? 'selected' : ''}>${escapeHtml(t)}</option>`; }).join('')}</select>`;
+      const filterLabel = dictStudy.filterValue === 'הכל' ? 'כל המילים' : dictStudy.filterValue;
+      let body = `<div class="p-4 rounded-2xl border-2 border-dashed border-[#bfe8fd] bg-white text-sm font-bold text-[#4b4b4b]">בחרו נושא או חלק דיבר, ואז התחילו כרטיסיות או בחינה. הכרטיסיות יציגו ערבית ועברית, והבחינה תציג שאלות רב־ברירה.</div>`;
+      const current = dictStudy.pool[dictStudy.index];
+      if (dictStudy.mode && dictStudy.pool.length && dictStudy.index >= dictStudy.pool.length) {
+        const score = dictStudy.mode === 'quiz' ? dictStudy.correct : dictStudy.known;
+        const label = dictStudy.mode === 'quiz' ? 'תשובות נכונות' : 'כרטיסיות שסומנו כידועות';
+        body = `<div class="p-5 rounded-2xl bg-[#d7ffb8]/40 border-2 border-[#58cc02] space-y-2"><div class="text-3xl">🏁</div><h4 class="font-extrabold text-xl">סיימתם את הסבב!</h4><p class="font-bold">${score} ${label} מתוך ${dictStudy.pool.length}.</p>${dictStudy.mode === 'flashcards' ? `<p class="text-sm">${dictStudy.missed} כרטיסיות סומנו לחזרה נוספת.</p>` : `<p class="text-sm">ציון: ${Math.round(100 * score / Math.max(1, dictStudy.pool.length))}%</p>`}<button onclick="dictStudyStart('${dictStudy.mode}')" class="duo-btn-green px-4 py-2 rounded-xl font-extrabold">סבב חדש 🔄</button></div>`;
+      } else if (dictStudy.mode && current) {
+        const progress = (dictStudy.index + 1) + ' / ' + dictStudy.pool.length;
+        if (dictStudy.mode === 'flashcards') {
+          body = `<div class="p-5 rounded-2xl border-2 border-[#84d8ff] bg-gradient-to-b from-[#f4fbff] to-white text-center space-y-4"><div class="flex items-center justify-between gap-2 text-xs font-extrabold text-[#777777]"><span>🃏 כרטיסייה</span><span>${progress}</span></div><button type="button" onclick="dictStudyFlip()" class="w-full min-h-[150px] rounded-2xl border-2 border-[#e5e5e5] bg-white hover:bg-[#f7f7f7] p-5 flex flex-col items-center justify-center gap-3"><span class="font-arabic text-4xl sm:text-5xl font-bold text-[#3c3c3c]" dir="rtl">${escapeHtml(current.ar)}</span>${dictStudy.flipped ? `<span class="text-xl sm:text-2xl font-extrabold text-[#1cb0f6]">${escapeHtml(current.he)}</span>` : `<span class="text-xs font-bold text-[#999999]">לחצו כדי לחשוף את התרגום</span>`}</button><div class="flex flex-wrap justify-center gap-2"><button type="button" onclick="dictStudyFlip()" class="duo-btn-outline px-4 py-2 rounded-xl font-extrabold">${dictStudy.flipped ? 'הצגת הערבית' : 'חשיפת התשובה'}</button>${dictStudy.flipped ? `<button onclick="dictStudyRateCard(false)" class="duo-btn-red px-4 py-2 rounded-xl font-extrabold">לחזור על זה</button><button onclick="dictStudyRateCard(true)" class="duo-btn-green px-4 py-2 rounded-xl font-extrabold">ידעתי ✓</button>` : ''}</div><p class="text-xs font-bold text-[#777777]">התקדמות: ${dictStudy.known} ידעתם · ${dictStudy.missed} לחזרה</p></div>`;
+        } else {
+          body = `<div class="p-5 rounded-2xl border-2 border-[#ce82ff] bg-[#faf5ff] space-y-4"><div class="flex items-center justify-between text-xs font-extrabold text-[#777777]"><span>📝 בחינה על מילים</span><span>${progress}</span></div><div class="text-center bg-white border-2 border-[#e5e5e5] rounded-2xl p-5"><p class="text-xs font-bold text-[#777777] mb-2">מה פירוש המילה?</p><span class="font-arabic text-4xl sm:text-5xl font-bold" dir="rtl">${escapeHtml(current.ar)}</span></div><div class="grid grid-cols-1 sm:grid-cols-2 gap-2">${dictStudy.options.map(function(o, i) { let cls = 'duo-btn-outline'; if (dictStudy.answered && o.right) cls = 'duo-btn-selected'; else if (dictStudy.answered && !o.right) cls = 'duo-btn-outline opacity-70'; return `<button ${dictStudy.answered ? 'disabled' : ''} onclick="dictStudyChoose(${i})" class="${cls} p-3 rounded-xl font-extrabold text-sm text-right">${escapeHtml(o.he)}</button>`; }).join('')}</div>${dictStudy.answered ? `<div class="p-3 rounded-xl bg-white border-2 border-[#e5e5e5] text-sm font-bold">${dictStudy.options.find(function(o, i) { return o.right; }) ? 'התשובה הנכונה: ' + escapeHtml(current.he) : ''}<button onclick="dictStudyNext()" class="duo-btn-blue block w-full mt-3 py-2 rounded-xl font-extrabold">${dictStudy.index + 1 < dictStudy.pool.length ? 'השאלה הבאה ←' : 'הצגת התוצאה'}</button></div>` : ''}<p class="text-xs font-bold text-[#777777]">תשובות נכונות עד כה: ${dictStudy.correct}</p></div>`;
+        }
+      }
+      return `<section class="p-4 sm:p-5 rounded-2xl border-2 border-[#e5e5e5] bg-[#f7f7f7] space-y-3"><div><div class="text-xs font-extrabold text-[#1899d6]">🧠 תרגול אוצר מילים</div><h3 class="text-xl font-extrabold">פלאשקארדס ובחינה</h3><p class="text-xs font-bold text-[#777777] mt-1">אפשר לסדר לפי נושאי המילון או לפי חלקי דיבר.</p></div><div class="flex flex-wrap gap-2 items-center">${topicSelect}${posSelect}<span class="text-xs font-extrabold text-[#777777]">${escapeHtml(filterLabel)}</span></div><div class="flex flex-wrap gap-2"><button type="button" onclick="dictStudyStart('flashcards')" class="duo-btn-blue px-4 py-2.5 rounded-xl font-extrabold">🃏 התחלת כרטיסיות</button><button type="button" onclick="dictStudyStart('quiz')" class="duo-btn-green px-4 py-2.5 rounded-xl font-extrabold">📝 התחלת בחינה</button></div>${body}</section>`;
+    }
+
+    // Daily learning streak: advances at most once per local calendar day, after a correct answer.
+    const DAILY_STREAK_KEY = 'dawalingo_daily_streak_v1';
+    function localDateKey(date) {
+      const d = date || new Date();
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    }
+    function shiftLocalDateKey(key, days) {
+      const parts = String(key).split('-').map(Number);
+      const d = new Date(parts[0], (parts[1] || 1) - 1, parts[2] || 1, 12, 0, 0, 0);
+      d.setDate(d.getDate() + days); return localDateKey(d);
+    }
+    function readDailyStreak() {
+      try { const v = JSON.parse(localStorage.getItem(DAILY_STREAK_KEY) || '{}'); return { current: Number(v.current) || 0, best: Number(v.best) || 0, lastDate: v.lastDate || '' }; }
+      catch (e) { return { current: 0, best: 0, lastDate: '' }; }
+    }
+    function dailyStreakInfo() {
+      const v = readDailyStreak(), today = localDateKey();
+      if (v.lastDate !== today && v.lastDate !== shiftLocalDateKey(today, -1)) v.current = 0;
+      return v;
+    }
+    function recordLearningDay() {
+      const v = readDailyStreak(), today = localDateKey();
+      if (v.lastDate === today) return v;
+      v.current = v.lastDate === shiftLocalDateKey(today, -1) ? v.current + 1 : 1;
+      v.best = Math.max(v.best, v.current); v.lastDate = today;
+      try { localStorage.setItem(DAILY_STREAK_KEY, JSON.stringify(v)); } catch (e) {}
+      return v;
+    }
+    function renderStreakBadge() {
+      const v = dailyStreakInfo();
+      return `<span title="שיא אישי: ${v.best} ימים רצופים" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-[#fff5d3] border border-[#ffc800] text-[#8c4103] text-xs font-extrabold">🔥 ${v.current} ${v.current === 1 ? 'יום רצוף' : 'ימים רצופים'} <span class="font-bold opacity-75">• שיא ${v.best}</span></span>`;
+    }
+
     function renderApp() {
       const appEl = document.getElementById('app');
       if (!appEl) return;
@@ -6312,11 +6632,11 @@ function renderForumTab() {
       let mainContentHtml = '';
       const addWordsHtml = `
           <div class="space-y-6 pb-20">
-            <div class="p-6 rounded-2xl bg-[#ddf4ff] border-2 border-[#84d8ff]"><h2 class="text-2xl font-extrabold">הוספת מילים למאגר (إِضَافَة مُفْرَدَات)</h2><p class="mt-2 text-sm">מילה שתוסיפו תופיע מיד באוצר המילים בממשק הרגיל, ותישמר בדפדפן הזה. לפני ההוספה נבדוק אם המילה בערבית כבר קיימת.</p></div>
+            <div class="p-6 rounded-2xl bg-[#ddf4ff] border-2 border-[#84d8ff]"><h2 class="text-2xl font-extrabold">הוספת מילים למאגר (إِضَافَة مُفْرَدَات)</h2><p class="mt-2 text-sm">מילה שתוסיפו תופיע מיד במילון ותישמר בדפדפן הזה. אם תבחרו ״פעלים״, האתר ינסה לזהות את הצורה שהקלדתם, ישמור אותה כצורת עבר גוף שלישי זכר ויבנה לוח נטיות. בפעלים חלולים או חריגים כדאי לבדוק את הטבלה.</p></div>
             <form onsubmit="addCustomWord(event)" class="p-5 bg-white rounded-2xl border-2 border-[#e5e5e5] space-y-3">
               <label class="block font-bold text-sm">המילה או הביטוי בערבית</label><input id="new-word-ar" required dir="rtl" class="w-full p-3 border-2 border-[#e5e5e5] rounded-xl font-arabic text-2xl" placeholder="مَثَلًا: مَكْتَبَة" />
               <label class="block font-bold text-sm">תרגום לעברית</label><input id="new-word-he" required class="w-full p-3 border-2 border-[#e5e5e5] rounded-xl" placeholder="למשל: ספרייה" />
-              <label class="block font-bold text-sm">מדור</label><select id="new-word-category" class="w-full p-3 border-2 border-[#e5e5e5] rounded-xl"><option>מילות יחס וקישור</option><option>שמות עצם</option><option>פעלים</option><option>תארים</option><option>אחר</option></select>
+              <label class="block font-bold text-sm">מדור</label><select id="new-word-category" class="w-full p-3 border-2 border-[#e5e5e5] rounded-xl"><option>מילות יחס וקישור</option><option>שמות עצם</option><option>פעלים</option><option>תארים</option><option>אחר</option></select><p class="text-xs font-bold text-[#777777]">כדי לזהות טוב יותר פועל שלא קיים במאגר, מומלץ להקליד אותו עם ניקוד. בצורות לא מנוקדות או בפעלים חריגים הזיהוי הוא הערכה אוטומטית.</p>
               <button class="duo-btn-green w-full p-3 rounded-xl font-extrabold">הוספה למילון</button><p id="add-word-feedback" class="text-sm font-bold" aria-live="polite"></p>
             </form>
             <div class="p-5 bg-[#f7f7f7] rounded-2xl border-2 border-[#e5e5e5] space-y-3"><h3 class="font-extrabold">סריקת סיכום (OCR)</h3><p class="text-sm">אפשר להעלות תמונה של סיכום. האתר ינסה לזהות טקסט בערבית ובעברית; התוצאות יוצגו לבדיקה לפני הוספה, כי זיהוי כתב יד עלול לטעות.</p><input id="vocab-scan-file" type="file" accept="image/*" class="block w-full" onchange="scanVocabImage(this)"/><p id="scan-status" class="text-sm font-bold"></p><textarea id="scan-text" rows="5" class="w-full p-3 rounded-xl border-2 border-[#e5e5e5]" placeholder="הטקסט המזוהה יופיע כאן לבדיקה. אפשר להעתיק ממנו מילה ולמלא את הטופס למעלה."></textarea></div>
@@ -6489,7 +6809,7 @@ function renderForumTab() {
               <div class="flex items-center justify-between gap-3">
                 <div><span class="text-xs font-extrabold uppercase text-[#1cb0f6]">לוח נטיות חכם</span>
                 <h2 class="text-2xl font-extrabold text-[#3c3c3c]">מילון (قَامُوس)</h2>
-                <p class="text-sm font-bold text-[#4b4b4b] mt-0.5">מקלידים פועל, שם עצם או תואר בערבית או בעברית: מקבלים תרגום, נטיות הפועל והשם, יתרון והפלגה לתארים, וקישורים ל-Wiktionary ולמילון מילסון.</p></div>
+                <p class="text-sm font-bold text-[#4b4b4b] mt-0.5">מקלידים פועל, שם עצם או תואר בערבית או בעברית: מקבלים תרגום, נטיות הפועל והשם, יתרון והפלגה לתארים, וקישורים ל-Wiktionary ולמילון מילסון.</p><div class="mt-2">${renderStreakBadge()}</div></div>
                 ${getGazelleMascotHTML("w-16 h-20 shrink-0")}
               </div>
               <input id="dict-search-input" type="text" value="${escapeHtml(state.dictSearch)}" oninput="handleDictSearchInput(this.value)" placeholder="חיפוש מילה בערבית או בעברית..." class="w-full px-4 py-3.5 rounded-2xl border-2 border-[#84d8ff] bg-white font-bold text-lg focus:outline-none focus:border-[#1cb0f6]" dir="rtl" />
@@ -6502,6 +6822,7 @@ function renderForumTab() {
             </div>
             <details class="rounded-2xl border-2 border-[#e5e5e5] bg-white p-4"><summary class="cursor-pointer font-extrabold text-sm text-[#1cb0f6]">➕ הוספת מילה חדשה או סריקת סיכום</summary><div class="pt-4">${addWordsHtml}</div></details>
             <div id="dict-morph-results"></div>
+            ${renderDictionaryStudyPanel(allItems)}
             <div class="p-4 rounded-2xl border-2 border-[#e5e5e5] bg-white space-y-3">
               <div class="flex flex-wrap items-center gap-2">
                 <span class="text-xs font-extrabold text-[#777777]">עיון לפי:</span>
@@ -6667,6 +6988,7 @@ function renderForumTab() {
                   <span class="px-2.5 py-1 rounded-lg bg-[#f7f7f7] text-[#777777]">✅ ${completedCount} שלבים הושלמו</span>
                   <button type="button" onclick="authSignOut()" class="px-2.5 py-1 rounded-lg text-[#ff4b4b] hover:bg-[#ffdfe0]">התנתקות</button>
                 </div>` : ''}
+                <div class="flex flex-wrap items-center justify-center sm:justify-start gap-2">${renderStreakBadge()}</div>
                 <p class="text-xs font-extrabold text-[#1cb0f6]">💬 לחצו על הצבי כדי לשוחח איתו</p>
               </div>
               <div class="flex items-center justify-center shrink-0">
