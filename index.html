@@ -5034,7 +5034,7 @@ window.forumVote = async function(id, replyId) {
         return 'ok';
       });
     });
-    if (res === 'dup') { forum.data.voted[key] = 1; showToast('כבר הצבעתם כאן: מותר להצביע פעם אחת מכל כתובת IP.'); }
+    if (res === 'dup') { forum.data.voted[key] = 1; showToast('כבר הצבעתם כאן: מותר להצביע פעם אחת.'); }
     else if (res === 'ok') { forum.data.voted[key] = 1; showToast('ההצבעה נקלטה. תודה!'); }
     renderApp();
   } catch (err) {
