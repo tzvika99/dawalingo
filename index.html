@@ -147,6 +147,11 @@
     .grammar-accordion > summary::-webkit-details-marker { display: none; }
     .grammar-accordion[open] .accordion-chevron { transform: rotate(45deg); }
     .grammar-accordion summary:focus-visible { outline: 3px solid #1cb0f6; outline-offset: -3px; }
+    .dict-study-accordion > summary::-webkit-details-marker { display: none; }
+    .dict-study-accordion .dict-study-open-label { display: none; }
+    .dict-study-accordion[open] .dict-study-open-label { display: inline; }
+    .dict-study-accordion[open] .dict-study-closed-label { display: none; }
+    .dict-study-accordion > summary:focus-visible { outline: 3px solid #1cb0f6; outline-offset: -3px; }
     /* ending highlight (grammar) */
     .end-mark { font-weight: 800; text-decoration: underline; text-decoration-thickness: 3px; text-underline-offset: 7px; border-radius: 4px; }
     /* gazelle chat */
@@ -381,55 +386,78 @@
       window.speechSynthesis.speak(u);
     }
 
-    // Original, synthesized feedback sounds (no external audio files or copied game effects).
-    function playToneSequence(sequence, volume) {
+    // Fast, original synthesized feedback sounds. Reuse one AudioContext so answers
+    // do not wait for a new audio engine to initialize on every click.
+    let feedbackAudioContext = null;
+    function getFeedbackAudioContext() {
       try {
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        if (!AudioCtx) return;
-        const ctx = new AudioCtx();
-        const startAt = ctx.currentTime + 0.025;
-        sequence.forEach(function(note) {
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          const at = startAt + note.at;
-          const duration = note.duration || 0.16;
-          osc.type = note.type || 'sine';
-          osc.frequency.setValueAtTime(note.freq, at);
-          if (note.endFreq) osc.frequency.exponentialRampToValueAtTime(note.endFreq, at + duration);
-          gain.gain.setValueAtTime(0.0001, at);
-          gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, (note.gain || 0.23) * (volume || 1)), at + 0.018);
-          gain.gain.exponentialRampToValueAtTime(0.0001, at + duration);
-          osc.connect(gain); gain.connect(ctx.destination);
-          osc.start(at); osc.stop(at + duration + 0.025);
-        });
-        const total = Math.max.apply(null, sequence.map(function(n) { return n.at + (n.duration || 0.16); })) + 0.12;
-        setTimeout(function() { try { ctx.close(); } catch (e) {} }, total * 1000);
-      } catch (e) {}
+        if (!AudioCtx) return null;
+        if (!feedbackAudioContext) feedbackAudioContext = new AudioCtx();
+        return feedbackAudioContext;
+      } catch (e) { return null; }
+    }
+    function primeFeedbackAudio() {
+      const ctx = getFeedbackAudioContext();
+      if (ctx && ctx.state === 'suspended') ctx.resume().catch(function() {});
+    }
+    // Pointer-down happens before click handlers, warming the audio context before
+    // an answer is evaluated. Keep a keydown fallback for keyboard navigation.
+    document.addEventListener('pointerdown', primeFeedbackAudio, { capture: true, passive: true });
+    document.addEventListener('keydown', primeFeedbackAudio, { capture: true });
+
+    function playToneSequence(sequence, volume) {
+      const ctx = getFeedbackAudioContext();
+      if (!ctx) return;
+      const schedule = function() {
+        try {
+          const startAt = ctx.currentTime + 0.003;
+          sequence.forEach(function(note) {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            const at = startAt + note.at;
+            const duration = note.duration || 0.12;
+            osc.type = note.type || 'triangle';
+            osc.frequency.setValueAtTime(note.freq, at);
+            if (note.endFreq) osc.frequency.exponentialRampToValueAtTime(note.endFreq, at + duration);
+            gain.gain.setValueAtTime(0.0001, at);
+            gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, (note.gain || 0.2) * (volume || 1)), at + 0.006);
+            gain.gain.exponentialRampToValueAtTime(0.0001, at + duration);
+            osc.connect(gain); gain.connect(ctx.destination);
+            osc.start(at); osc.stop(at + duration + 0.012);
+          });
+        } catch (e) {}
+      };
+      if (ctx.state === 'suspended') {
+        ctx.resume().then(schedule).catch(function() {});
+      } else {
+        schedule();
+      }
     }
     function playCorrectSound() {
-      // Three bright, short notes with a soft bell-like contour.
+      // A quick, upbeat, bouncy two-tone chime with a bright finish.
       playToneSequence([
-        { freq: 659.25, at: 0, duration: 0.13, gain: 0.22, type: 'sine' },
-        { freq: 830.61, at: 0.09, duration: 0.16, gain: 0.24, type: 'sine' },
-        { freq: 987.77, at: 0.19, duration: 0.25, gain: 0.22, type: 'triangle' }
-      ], 0.9);
+        { freq: 784.00, at: 0, duration: 0.085, gain: 0.22, type: 'triangle' },
+        { freq: 1046.50, at: 0.055, duration: 0.12, gain: 0.23, type: 'triangle' },
+        { freq: 1318.51, at: 0.115, duration: 0.16, gain: 0.18, type: 'sine' }
+      ], 0.86);
     }
     function playIncorrectSound() {
-      // A low, gentle two-note reminder rather than a harsh buzzer.
+      // Short, soft, cartoony falling blip (original, not a copied game effect).
       playToneSequence([
-        { freq: 293.66, endFreq: 277.18, at: 0, duration: 0.18, gain: 0.19, type: 'triangle' },
-        { freq: 220.00, endFreq: 207.65, at: 0.14, duration: 0.22, gain: 0.18, type: 'sine' }
-      ], 0.82);
+        { freq: 311.13, endFreq: 261.63, at: 0, duration: 0.12, gain: 0.19, type: 'triangle' },
+        { freq: 233.08, endFreq: 196.00, at: 0.065, duration: 0.14, gain: 0.16, type: 'sine' }
+      ], 0.78);
     }
     function playVictorySound() {
-      // A short original rising arpeggio with a warm final chord-like pairing.
+      // A celebratory, quick rising flourish distinct from the single-answer sound.
       playToneSequence([
-        { freq: 392.00, at: 0, duration: 0.16, gain: 0.20, type: 'sine' },
-        { freq: 493.88, at: 0.10, duration: 0.18, gain: 0.21, type: 'sine' },
-        { freq: 587.33, at: 0.20, duration: 0.22, gain: 0.22, type: 'triangle' },
-        { freq: 783.99, at: 0.32, duration: 0.34, gain: 0.22, type: 'sine' },
-        { freq: 987.77, at: 0.34, duration: 0.30, gain: 0.09, type: 'triangle' }
-      ], 0.88);
+        { freq: 659.25, at: 0, duration: 0.11, gain: 0.18, type: 'triangle' },
+        { freq: 830.61, at: 0.075, duration: 0.13, gain: 0.20, type: 'triangle' },
+        { freq: 1046.50, at: 0.15, duration: 0.17, gain: 0.21, type: 'sine' },
+        { freq: 1318.51, at: 0.235, duration: 0.24, gain: 0.19, type: 'sine' },
+        { freq: 1567.98, at: 0.25, duration: 0.19, gain: 0.08, type: 'triangle' }
+      ], 0.84);
     }
 
     // ============================================================================
@@ -6521,7 +6549,7 @@ function renderForumTab() {
     }
 
     // Dictionary study mode: flashcards and multiple-choice quiz; pools can be grouped by topic or part of speech.
-    const dictStudy = { mode: '', filterKind: 'topic', filterValue: 'הכל', pool: [], index: 0, flipped: false, answered: false, correct: 0, known: 0, missed: 0, options: [] };
+    const dictStudy = { expanded: false, mode: '', filterKind: 'topic', filterValue: 'הכל', pool: [], index: 0, flipped: false, answered: false, correct: 0, known: 0, missed: 0, options: [] };
     function dictStudyGetPool() {
       return getDictItems().filter(function(item) {
         if (!item || !item.ar || !item.he) return false;
@@ -6541,12 +6569,14 @@ function renderForumTab() {
       const wrong = dictStudyShuffle(meanings).slice(0, 3).map(function(he) { return { he: he, right: false }; });
       dictStudy.options = dictStudyShuffle([{ he: current.he, right: true }].concat(wrong));
     }
+    window.dictStudySetExpanded = function(open) { dictStudy.expanded = !!open; };
     window.dictStudySetFilter = function(kind, value) {
       dictStudy.filterKind = kind === 'pos' ? 'pos' : 'topic'; dictStudy.filterValue = value || 'הכל';
       dictStudy.pool = []; dictStudy.index = 0; dictStudy.flipped = false; dictStudy.answered = false; dictStudy.correct = 0; dictStudy.known = 0; dictStudy.missed = 0;
       renderApp();
     };
     window.dictStudyStart = function(mode) {
+      dictStudy.expanded = true;
       dictStudy.mode = mode === 'quiz' ? 'quiz' : 'flashcards';
       dictStudy.pool = dictStudyShuffle(dictStudyGetPool()); dictStudy.index = 0; dictStudy.flipped = false; dictStudy.answered = false; dictStudy.correct = 0; dictStudy.known = 0; dictStudy.missed = 0;
       dictStudyPrepareOptions(); renderApp();
@@ -6588,7 +6618,13 @@ function renderForumTab() {
           body = `<div class="p-5 rounded-2xl border-2 border-[#ce82ff] bg-[#faf5ff] space-y-4"><div class="flex items-center justify-between text-xs font-extrabold text-[#777777]"><span>📝 בחינה על מילים</span><span>${progress}</span></div><div class="text-center bg-white border-2 border-[#e5e5e5] rounded-2xl p-5"><p class="text-xs font-bold text-[#777777] mb-2">מה פירוש המילה?</p><span class="font-arabic text-4xl sm:text-5xl font-bold" dir="rtl">${escapeHtml(current.ar)}</span></div><div class="grid grid-cols-1 sm:grid-cols-2 gap-2">${dictStudy.options.map(function(o, i) { let cls = 'duo-btn-outline'; if (dictStudy.answered && o.right) cls = 'duo-btn-selected'; else if (dictStudy.answered && !o.right) cls = 'duo-btn-outline opacity-70'; return `<button ${dictStudy.answered ? 'disabled' : ''} onclick="dictStudyChoose(${i})" class="${cls} p-3 rounded-xl font-extrabold text-sm text-right">${escapeHtml(o.he)}</button>`; }).join('')}</div>${dictStudy.answered ? `<div class="p-3 rounded-xl bg-white border-2 border-[#e5e5e5] text-sm font-bold">${dictStudy.options.find(function(o, i) { return o.right; }) ? 'התשובה הנכונה: ' + escapeHtml(current.he) : ''}<button onclick="dictStudyNext()" class="duo-btn-blue block w-full mt-3 py-2 rounded-xl font-extrabold">${dictStudy.index + 1 < dictStudy.pool.length ? 'השאלה הבאה ←' : 'הצגת התוצאה'}</button></div>` : ''}<p class="text-xs font-bold text-[#777777]">תשובות נכונות עד כה: ${dictStudy.correct}</p></div>`;
         }
       }
-      return `<section class="p-4 sm:p-5 rounded-2xl border-2 border-[#e5e5e5] bg-[#f7f7f7] space-y-3"><div><div class="text-xs font-extrabold text-[#1899d6]">🧠 תרגול אוצר מילים</div><h3 class="text-xl font-extrabold">פלאשקארדס ובחינה</h3><p class="text-xs font-bold text-[#777777] mt-1">אפשר לסדר לפי נושאי המילון או לפי חלקי דיבר.</p></div><div class="flex flex-wrap gap-2 items-center">${topicSelect}${posSelect}<span class="text-xs font-extrabold text-[#777777]">${escapeHtml(filterLabel)}</span></div><div class="flex flex-wrap gap-2"><button type="button" onclick="dictStudyStart('flashcards')" class="duo-btn-blue px-4 py-2.5 rounded-xl font-extrabold">🃏 התחלת כרטיסיות</button><button type="button" onclick="dictStudyStart('quiz')" class="duo-btn-green px-4 py-2.5 rounded-xl font-extrabold">📝 התחלת בחינה</button></div>${body}</section>`;
+      return `<details id="dict-study-accordion" class="dict-study-accordion rounded-2xl border-2 border-[#e5e5e5] bg-white overflow-hidden" ontoggle="dictStudySetExpanded(this.open)" ${dictStudy.expanded ? 'open' : ''}>
+        <summary class="cursor-pointer list-none p-4 sm:p-5 flex items-center justify-between gap-3 select-none">
+          <div><div class="text-xs font-extrabold text-[#1899d6]">🧠 תרגול אוצר מילים</div><h3 class="text-xl font-extrabold">פלאשקארדס ובחינה</h3><p class="text-xs font-bold text-[#777777] mt-1">אפשר לסדר לפי נושאי המילון או לפי חלקי דיבר.</p></div>
+          <span class="shrink-0 rounded-xl border-2 border-[#e5e5e5] bg-white px-3 py-2 text-sm font-extrabold text-[#1cb0f6] shadow-[0_3px_0_#e5e5e5]"><span class="dict-study-closed-label">▼ פתיחה</span><span class="dict-study-open-label">▲ סגירה</span></span>
+        </summary>
+        <div class="p-4 sm:p-5 border-t-2 border-[#e5e5e5] bg-[#f7f7f7] space-y-3"><div class="flex flex-wrap gap-2 items-center">${topicSelect}${posSelect}<span class="text-xs font-extrabold text-[#777777]">${escapeHtml(filterLabel)}</span></div><div class="flex flex-wrap gap-2"><button type="button" onclick="dictStudyStart('flashcards')" class="duo-btn-blue px-4 py-2.5 rounded-xl font-extrabold">🃏 התחלת כרטיסיות</button><button type="button" onclick="dictStudyStart('quiz')" class="duo-btn-green px-4 py-2.5 rounded-xl font-extrabold">📝 התחלת בחינה</button></div>${body}</div>
+      </details>`;
     }
 
     // Daily learning streak: advances at most once per local calendar day, after a correct answer.
