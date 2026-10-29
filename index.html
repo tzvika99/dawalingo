@@ -428,37 +428,40 @@
           });
         } catch (e) {}
       };
+      // Schedule against AudioContext.currentTime immediately. If the context is
+      // suspended, its clock is paused; resuming it starts the already-scheduled sound
+      // without waiting for a promise round-trip before building the audio nodes.
+      schedule();
       if (ctx.state === 'suspended') {
-        ctx.resume().then(schedule).catch(function() {});
-      } else {
-        schedule();
+        try { const resumeResult = ctx.resume(); if (resumeResult && resumeResult.catch) resumeResult.catch(function() {}); } catch (e) {}
       }
     }
     function playCorrectSound() {
-      // A quick, upbeat, bouncy two-tone chime with a bright finish.
+      // Original bright, plucky confirmation: a quick pop followed by a rising sparkle.
       playToneSequence([
-        { freq: 784.00, at: 0, duration: 0.085, gain: 0.22, type: 'triangle' },
-        { freq: 1046.50, at: 0.055, duration: 0.12, gain: 0.23, type: 'triangle' },
-        { freq: 1318.51, at: 0.115, duration: 0.16, gain: 0.18, type: 'sine' }
-      ], 0.86);
-    }
-    function playIncorrectSound() {
-      // Short, soft, cartoony falling blip (original, not a copied game effect).
-      playToneSequence([
-        { freq: 311.13, endFreq: 261.63, at: 0, duration: 0.12, gain: 0.19, type: 'triangle' },
-        { freq: 233.08, endFreq: 196.00, at: 0.065, duration: 0.14, gain: 0.16, type: 'sine' }
+        { freq: 659.25, at: 0, duration: 0.07, gain: 0.16, type: 'square' },
+        { freq: 987.77, at: 0.045, duration: 0.095, gain: 0.17, type: 'triangle' },
+        { freq: 1318.51, at: 0.09, duration: 0.12, gain: 0.13, type: 'sine' }
       ], 0.78);
     }
-    function playVictorySound() {
-      // A celebratory, quick rising flourish distinct from the single-answer sound.
+    function playIncorrectSound() {
+      // A soft two-step descending boop, short enough not to interrupt the question.
       playToneSequence([
-        { freq: 659.25, at: 0, duration: 0.11, gain: 0.18, type: 'triangle' },
-        { freq: 830.61, at: 0.075, duration: 0.13, gain: 0.20, type: 'triangle' },
-        { freq: 1046.50, at: 0.15, duration: 0.17, gain: 0.21, type: 'sine' },
-        { freq: 1318.51, at: 0.235, duration: 0.24, gain: 0.19, type: 'sine' },
-        { freq: 1567.98, at: 0.25, duration: 0.19, gain: 0.08, type: 'triangle' }
-      ], 0.84);
+        { freq: 392.00, endFreq: 293.66, at: 0, duration: 0.105, gain: 0.15, type: 'sine' },
+        { freq: 293.66, endFreq: 220.00, at: 0.055, duration: 0.12, gain: 0.13, type: 'triangle' }
+      ], 0.72);
     }
+    function playVictorySound() {
+      // A separate celebratory arpeggio with a tiny final chime; original synthesis.
+      playToneSequence([
+        { freq: 523.25, at: 0, duration: 0.085, gain: 0.13, type: 'triangle' },
+        { freq: 659.25, at: 0.065, duration: 0.095, gain: 0.15, type: 'triangle' },
+        { freq: 783.99, at: 0.13, duration: 0.11, gain: 0.16, type: 'square' },
+        { freq: 1046.50, at: 0.205, duration: 0.17, gain: 0.17, type: 'sine' },
+        { freq: 1567.98, at: 0.25, duration: 0.15, gain: 0.075, type: 'sine' }
+      ], 0.76);
+    }
+
 
     // ============================================================================
     // FLASH-ANIMATED ARABIAN GAZELLE MASCOT (الغَزَال العَرَبِيّ) & TOPIC ICONS
@@ -3068,6 +3071,59 @@
       const counts = {}; PRONOUN_LIST.forEach(function(p) { const f = verbForm(v, tense, p); counts[f] = (counts[f] || 0) + 1; });
       return PRONOUN_LIST.filter(function(p) { return counts[verbForm(v, tense, p)] === 1; });
     }
+    // Prefer verb-only distractors that are genuinely challenging: same root first,
+    // then roots sharing radicals / visually similar lemmas, then other course verbs.
+    function normalizedArabicLetters(value) {
+      return stripTashkeel(String(value || ''))
+        .replace(/[.\sـ]/g, '')
+        .replace(/[أإآٱ]/g, 'ا')
+        .replace(/ى/g, 'ي')
+        .replace(/ؤ/g, 'و')
+        .replace(/ئ/g, 'ي')
+        .replace(/[^\u0621-\u064A]/g, '');
+    }
+    function verbRootLetters(v) {
+      return normalizedArabicLetters(v && v.root ? v.root : '');
+    }
+    function verbSimilarityScore(target, candidate, preferredPool) {
+      const aRoot = verbRootLetters(target), bRoot = verbRootLetters(candidate);
+      const aLemma = normalizedArabicLetters(target && target.lemma), bLemma = normalizedArabicLetters(candidate && candidate.lemma);
+      let score = 0;
+      if (aRoot && bRoot && aRoot === bRoot) score += 100;
+      else if (aRoot && bRoot) {
+        const aa = Array.from(new Set(aRoot)), bb = Array.from(new Set(bRoot));
+        const overlap = aa.filter(function(ch) { return bb.indexOf(ch) !== -1; }).length;
+        score += overlap * 12;
+        const max = Math.min(aRoot.length, bRoot.length);
+        for (let i = 0; i < max; i++) if (aRoot[i] === bRoot[i]) score += 8;
+      }
+      // Surface similarity rewards near-lookalikes such as related derived forms.
+      if (aLemma && bLemma) {
+        let shared = 0;
+        const targetLetters = Array.from(new Set(aLemma));
+        targetLetters.forEach(function(ch) { if (bLemma.indexOf(ch) !== -1) shared++; });
+        score += shared * 1.5;
+        if (aLemma.slice(-2) === bLemma.slice(-2)) score += 2;
+        if (aLemma.slice(0, 2) === bLemma.slice(0, 2)) score += 2;
+      }
+      if (target && candidate && target.binyan && candidate.binyan && target.binyan === candidate.binyan) score += 3;
+      if (Array.isArray(preferredPool) && preferredPool.some(function(v) { return v && normalizedArabicLetters(v.lemma) === bLemma; })) score += 2;
+      return score;
+    }
+    function pickVerbDistractors(target, preferredPool, count, key) {
+      const all = dedupBy(VERB_CONJUGATION_DB.filter(function(v) {
+        return v && v.lemma && normalizedArabicLetters(v.lemma) !== normalizedArabicLetters(target.lemma)
+          && (key !== 'meaning' || v.meaning !== target.meaning);
+      }), function(v) { return key === 'meaning' ? v.meaning : normalizedArabicLetters(v.lemma); });
+      // Shuffle first so equally similar alternatives vary between attempts.
+      const shuffled = shuf(all);
+      shuffled.sort(function(a, b) {
+        return verbSimilarityScore(target, b, preferredPool) - verbSimilarityScore(target, a, preferredPool);
+      });
+      // Take from the most similar tier while ensuring we have enough real verb options.
+      return shuffled.slice(0, count);
+    }
+
     function makeVerbSteps(spec) {
       const verbs = spec.verbs.map(function(i) { return VERB_CONJUGATION_DB[i]; }).filter(Boolean);
       const vOrder = shuf(verbs); let vc = 0; let tc = 0;
@@ -3095,13 +3151,21 @@
           options: shuffleDerangement([x.p.he].concat(others.map(function(p) { return p.he; }))), correctAnswer: x.p.he, grammarTip: form + ' = ' + x.p.ar + ' (' + x.p.he + ') • ' + x.v.meaning };
       }
       function mean() {
-        const v = nextV(); const others = pickFrom(verbs.filter(function(o) { return o.meaning !== v.meaning; }), 3);
-        return { type: 'multiple_choice', prompt: 'מה פירוש הפועל?', arabicPrompt: v.lemma, options: shuffleDerangement([v.meaning].concat(others.map(function(o) { return o.meaning; }))), correctAnswer: v.meaning, grammarTip: v.lemma + ' = ' + v.meaning + ' (שורש ' + v.root + ')' };
+        const v = nextV();
+        // Every choice is a verb meaning; related roots and lookalike derived verbs
+        // are prioritized to make recognition more demanding than unrelated distractors.
+        const others = pickVerbDistractors(v, verbs, 3, 'meaning');
+        return { type: 'multiple_choice', prompt: 'מה פירוש הפועל?', arabicPrompt: v.lemma,
+          options: shuffleDerangement([v.meaning].concat(others.map(function(o) { return o.meaning; }))),
+          correctAnswer: v.meaning, grammarTip: v.lemma + ' = ' + v.meaning + ' (שורש ' + v.root + ')' };
       }
       function meanRev() {
-        const v = nextV(); const others = pickFrom(verbs.filter(function(o) { return o.lemma !== v.lemma; }), 3);
+        const v = nextV();
+        // Arabic options are all verbs, with same-root or orthographically similar forms first.
+        const others = pickVerbDistractors(v, verbs, 3, 'lemma');
         return { type: 'irab_detective', prompt: 'איך אומרים בערבית: ' + v.meaning + ' (הוא, בעבר)', sentenceBefore: 'هُوَ', targetWordBase: '', sentenceAfter: '', translation: v.meaning,
-          options: shuffleDerangement([v.lemma].concat(others.map(function(o) { return o.lemma; })).map(function(f) { return { value: f, fullWord: f }; })), correctValue: v.lemma, grammarTip: v.lemma + ' = ' + v.meaning + ' (שורש ' + v.root + ')' };
+          options: shuffleDerangement([v.lemma].concat(others.map(function(o) { return o.lemma; })).map(function(f) { return { value: f, fullWord: f }; })),
+          correctValue: v.lemma, grammarTip: v.lemma + ' = ' + v.meaning + ' (שורש ' + v.root + ')' };
       }
       function odd() {
         const x = pickPair(false); const outT = x.t === 'present' ? 'past' : 'present'; const right = verbForm(x.v, outT, x.p);
