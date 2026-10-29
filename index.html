@@ -6681,12 +6681,14 @@ function renderForumTab() {
     }
 
     // Dictionary study mode: flashcards and multiple-choice quiz; pools can be grouped by topic or part of speech.
-    const dictStudy = { expanded: false, mode: '', filterKind: 'topic', filterValue: 'הכל', pool: [], index: 0, flipped: false, answered: false, correct: 0, known: 0, missed: 0, options: [] };
+    const dictStudy = { topic: 'הכל', pos: 'הכל', expanded: false, mode: '', filterKind: 'topic', filterValue: 'הכל', pool: [], index: 0, flipped: false, answered: false, correct: 0, known: 0, missed: 0, options: [] };
     function dictStudyGetPool() {
       return getDictItems().filter(function(item) {
         if (!item || !item.ar || !item.he) return false;
-        if (dictStudy.filterValue === 'הכל') return true;
-        return dictStudy.filterKind === 'topic' ? item.category === dictStudy.filterValue : posOf(item) === dictStudy.filterValue;
+        // Topic and part of speech now combine (both filters apply together).
+        if (dictStudy.topic !== 'הכל' && item.category !== dictStudy.topic) return false;
+        if (dictStudy.pos !== 'הכל' && posOf(item) !== dictStudy.pos) return false;
+        return true;
       });
     }
     function dictStudyShuffle(items) {
@@ -6708,14 +6710,14 @@ function renderForumTab() {
     }
     window.dictStudySetExpanded = function(open) { dictStudy.expanded = !!open; };
     window.dictStudySetFilter = function(kind, value) {
-      dictStudy.filterKind = kind === 'pos' ? 'pos' : 'topic'; dictStudy.filterValue = value || 'הכל';
+      if (kind === 'pos') dictStudy.pos = value || 'הכל'; else dictStudy.topic = value || 'הכל';
       dictStudy.pool = []; dictStudy.index = 0; dictStudy.flipped = false; dictStudy.answered = false; dictStudy.correct = 0; dictStudy.known = 0; dictStudy.missed = 0;
       renderApp();
     };
     window.dictStudyStart = function(mode) {
       dictStudy.expanded = true;
       dictStudy.mode = mode === 'quiz' ? 'quiz' : 'flashcards';
-      dictStudy.pool = dictStudyShuffle(dictStudyGetPool()); dictStudy.index = 0; dictStudy.flipped = false; dictStudy.answered = false; dictStudy.correct = 0; dictStudy.known = 0; dictStudy.missed = 0;
+      dictStudy.pool = dictStudyShuffle(dictStudyGetPool()); if (!dictStudy.pool.length) { showToast('אין מילים בשילוב הזה. נסו לבחור אחרת.'); return; } dictStudy.index = 0; dictStudy.flipped = false; dictStudy.answered = false; dictStudy.correct = 0; dictStudy.known = 0; dictStudy.missed = 0;
       dictStudyPrepareOptions(); renderApp();
     };
     window.dictStudyFlip = function() { dictStudy.flipped = !dictStudy.flipped; renderApp(); };
@@ -6736,12 +6738,21 @@ function renderForumTab() {
       dictStudy.index++; dictStudy.flipped = false; dictStudy.answered = false; dictStudyPrepareOptions(); renderApp();
     };
     function renderDictionaryStudyPanel(allItems) {
-      const topics = Array.from(new Set(allItems.map(function(v) { return v.category; }).filter(Boolean))).sort(function(a,b) { return a.localeCompare(b, 'he'); });
-      const pos = POS_ORDER.filter(function(p) { return allItems.some(function(v) { return posOf(v) === p; }); });
-      const topicSelect = `<select onchange="dictStudySetFilter('topic',this.value)" class="p-2 rounded-xl border-2 border-[#e5e5e5] bg-white text-sm font-bold max-w-full"><option value="הכל" ${dictStudy.filterKind === 'topic' && dictStudy.filterValue === 'הכל' ? 'selected' : ''}>כל הנושאים</option>${topics.map(function(t) { return `<option value="${escapeHtml(t)}" ${dictStudy.filterKind === 'topic' && dictStudy.filterValue === t ? 'selected' : ''}>${escapeHtml(t)}</option>`; }).join('')}</select>`;
-      const posSelect = `<select onchange="dictStudySetFilter('pos',this.value)" class="p-2 rounded-xl border-2 border-[#e5e5e5] bg-white text-sm font-bold max-w-full"><option value="הכל" ${dictStudy.filterKind === 'pos' && dictStudy.filterValue === 'הכל' ? 'selected' : ''}>כל חלקי הדיבר</option>${pos.map(function(t) { return `<option value="${escapeHtml(t)}" ${dictStudy.filterKind === 'pos' && dictStudy.filterValue === t ? 'selected' : ''}>${escapeHtml(t)}</option>`; }).join('')}</select>`;
-      const filterLabel = dictStudy.filterValue === 'הכל' ? 'כל המילים' : dictStudy.filterValue;
-      let body = `<div class="p-4 rounded-2xl border-2 border-dashed border-[#bfe8fd] bg-white text-sm font-bold text-[#4b4b4b]">בחרו נושא או חלק דיבר, ואז התחילו כרטיסיות או בחינה. הכרטיסיות יציגו ערבית ועברית, והבחינה תציג שאלות רב־ברירה.</div>`;
+      // Each list only offers values that still have words under the other filter, and a topic whose name
+      // is also a part of speech (e.g. "פעלים") is offered once, under parts of speech.
+      const inTopic = function(v) { return dictStudy.topic === 'הכל' || v.category === dictStudy.topic; };
+      const inPos = function(v) { return dictStudy.pos === 'הכל' || posOf(v) === dictStudy.pos; };
+      const posAll = POS_ORDER.filter(function(p) { return allItems.some(function(v) { return posOf(v) === p; }); });
+      const pos = posAll.filter(function(p) { return p === dictStudy.pos || allItems.some(function(v) { return posOf(v) === p && inTopic(v); }); });
+      const topics = Array.from(new Set(allItems.filter(function(v) { return inPos(v); }).map(function(v) { return v.category; }).filter(function(c) { return c && (posAll.indexOf(c) === -1 || c === dictStudy.topic); }))).sort(function(a,b) { return a.localeCompare(b, 'he'); });
+      const sel = function(kind, cur, allLabel, list) {
+        return `<select onchange="dictStudySetFilter('${kind}',this.value)" class="p-2 rounded-xl border-2 border-[#e5e5e5] bg-white text-sm font-bold max-w-full"><option value="הכל" ${cur === 'הכל' ? 'selected' : ''}>${allLabel}</option>${list.map(function(t) { return `<option value="${escapeHtml(t)}" ${cur === t ? 'selected' : ''}>${escapeHtml(t)}</option>`; }).join('')}</select>`;
+      };
+      const topicSelect = sel('topic', dictStudy.topic, 'כל הנושאים', topics);
+      const posSelect = sel('pos', dictStudy.pos, 'כל חלקי הדיבר', pos);
+      const poolSize = dictStudyGetPool().length;
+      const filterLabel = (dictStudy.topic === 'הכל' && dictStudy.pos === 'הכל' ? 'כל המילים' : [dictStudy.topic, dictStudy.pos].filter(function(x) { return x !== 'הכל'; }).join(' · ')) + ' (' + poolSize + ' מילים)';
+      let body = `<div class="p-4 rounded-2xl border-2 border-dashed border-[#bfe8fd] bg-white text-sm font-bold text-[#4b4b4b]">בחרו נושא, חלק דיבר או שניהם יחד, ואז התחילו כרטיסיות או בחינה. הכרטיסיות יציגו ערבית ועברית, והבחינה תציג שאלות רב־ברירה.</div>`;
       const current = dictStudy.pool[dictStudy.index];
       if (dictStudy.mode && dictStudy.pool.length && dictStudy.index >= dictStudy.pool.length) {
         const score = dictStudy.mode === 'quiz' ? dictStudy.correct : dictStudy.known;
